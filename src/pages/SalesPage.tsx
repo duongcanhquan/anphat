@@ -40,11 +40,14 @@ import type {
   Order,
   OrderLine,
   OrderLineExtra,
+  OrderPayment,
   OrderStatus,
+  OrderStatusCore,
   ProductRecipe,
 } from '@/types'
 import {
   ORDER_STATUS_COLORS,
+  ORDER_STATUS_CORE,
   ORDER_STATUS_LABELS,
   calcLineTotal,
   canUnlockOrder,
@@ -53,8 +56,11 @@ import {
   getDefaultRecipe,
   getProductRecipes,
   itemsFromExpression,
+  normalizeOrderStatus,
   orderPaidTotal,
+  orderPaymentsList,
   recipeItems,
+  statusFromPayment,
 } from '@/types'
 import { cn, formatDateTime, formatMoney, formatNumber, uid } from '@/lib/utils'
 
@@ -81,18 +87,30 @@ function emptyLine(f?: Formula, recipe?: ProductRecipe): OrderLine {
       { id: uid(), label: 'Chiết khấu', amount: 0, mode: 'percent', type: 'discount' },
     ],
     lineTotal: f ? f.unitPrice : 0,
-    status: 'dat_hang',
+    status: 'draft',
     note: '',
   }
 }
 
 function StatusBadge({ status }: { status: OrderStatus }) {
-  const c = ORDER_STATUS_COLORS[status]
+  const core = normalizeOrderStatus(status)
+  const c = ORDER_STATUS_COLORS[core]
   return (
     <span className={cn('inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold', c.bg, c.text)}>
-      {ORDER_STATUS_LABELS[status]}
+      {ORDER_STATUS_LABELS[core]}
     </span>
   )
+}
+
+function datetimeLocalValue(ts: number) {
+  const d = new Date(ts)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function parseDatetimeLocal(v: string) {
+  const t = new Date(v).getTime()
+  return Number.isFinite(t) ? t : Date.now()
 }
 
 function LineExtrasEditor({
@@ -263,10 +281,14 @@ export function SalesPage() {
   const [lines, setLines] = useState<OrderLine[]>([emptyLine()])
   const [customerId, setCustomerId] = useState('')
   const [customerSearch, setCustomerSearch] = useState('')
-  const [paidAmount, setPaidAmount] = useState(0)
+  const [payments, setPayments] = useState<OrderPayment[]>([])
+  const [payAmount, setPayAmount] = useState(0)
+  const [payNote, setPayNote] = useState('')
+  const [payAt, setPayAt] = useState(() => datetimeLocalValue(Date.now()))
   const [contractAmount, setContractAmount] = useState(0)
   const [note, setNote] = useState('')
-  const [orderStatus, setOrderStatus] = useState<OrderStatus>('dat_hang')
+  const [forceDraft, setForceDraft] = useState(false)
+  const [orderStatusOverride, setOrderStatusOverride] = useState<OrderStatusCore | null>(null)
   const [assignedTo, setAssignedTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -274,6 +296,10 @@ export function SalesPage() {
   const [ratioModal, setRatioModal] = useState<{ lineId: string; items: FormulaItem[]; materialIds: string[] } | null>(null)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
+  const [detailPayAmount, setDetailPayAmount] = useState(0)
+  const [detailPayNote, setDetailPayNote] = useState('')
+  const [detailPayAt, setDetailPayAt] = useState(() => datetimeLocalValue(Date.now()))
+  const [detailPayBusy, setDetailPayBusy] = useState(false)
 
   useEffect(() => {
     const u1 = watchFormulas(setFormulas)
@@ -303,7 +329,39 @@ export function SalesPage() {
   }, [customers, customerSearch])
 
   const totalAmount = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines])
+  const paidAmount = useMemo(() => payments.reduce((s, p) => s + (p.amount || 0), 0), [payments])
   const debt = Math.max(0, totalAmount - paidAmount)
+  const autoStatus = statusFromPayment(totalAmount, paidAmount)
+  const orderStatus: OrderStatusCore =
+    orderStatusOverride === 'huy'
+      ? 'huy'
+      : forceDraft || orderStatusOverride === 'draft'
+        ? 'draft'
+        : autoStatus
+
+  const addPaymentRow = () => {
+    if (!writable || payAmount <= 0) return
+    setPayments((prev) => [
+      {
+        id: uid(),
+        amount: payAmount,
+        note: payNote.trim(),
+        paidAt: parseDatetimeLocal(payAt),
+        createdBy: profile?.id || '',
+        createdByName: profile?.displayName,
+      },
+      ...prev,
+    ])
+    setPayAmount(0)
+    setPayNote('')
+    setPayAt(datetimeLocalValue(Date.now()))
+    setForceDraft(false)
+    setOrderStatusOverride(null)
+  }
+
+  const removePaymentRow = (id: string) => {
+    setPayments((prev) => prev.filter((p) => p.id !== id))
+  }
 
   const materialNeed = useMemo(() => {
     const map = new Map<string, { id: string; name: string; unit: string; qty: number }>()
@@ -367,11 +425,15 @@ export function SalesPage() {
 
   const resetDraft = () => {
     setLines([emptyLine()])
-    setPaidAmount(0)
+    setPayments([])
+    setPayAmount(0)
+    setPayNote('')
+    setPayAt(datetimeLocalValue(Date.now()))
     setContractAmount(0)
     setNote('')
     setCustomerId('')
-    setOrderStatus('dat_hang')
+    setForceDraft(false)
+    setOrderStatusOverride(null)
     setAssignedTo(profile?.id || '')
     setEditingOrder(null)
   }
@@ -384,16 +446,35 @@ export function SalesPage() {
     setEditingOrder(order)
     setLines(order.lines.map((l) => ({ ...l, extras: l.extras.map((e) => ({ ...e })) })))
     setCustomerId(order.customerId || '')
-    setPaidAmount(orderPaidTotal(order))
+    setPayments(orderPaymentsList(order).map((p) => ({ ...p })))
     setContractAmount(order.contractAmount || 0)
     setNote(order.note || '')
-    setOrderStatus(order.status)
+    const core = normalizeOrderStatus(order.status)
+    setForceDraft(core === 'draft')
+    setOrderStatusOverride(core === 'huy' ? 'huy' : null)
     setAssignedTo(order.assignedTo || order.createdBy || profile?.id || '')
     setTab('tao-don')
     setDetailOrder(null)
   }
 
-  const confirmOrder = async () => {
+  const buildDeductItems = () =>
+    lines.flatMap((line) =>
+      line.items.map((item) => {
+        const mat = materials.find((m) => m.id === item.materialId)
+        const qtyConverted = item.quantityPerUnit * line.quantity
+        const qtyStock = mat
+          ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
+          : qtyConverted
+        return {
+          materialId: item.materialId,
+          materialName: item.materialName,
+          unit: mat?.unit || item.unit,
+          quantity: qtyStock,
+        }
+      }),
+    )
+
+  const confirmOrder = async (asDraft?: boolean) => {
     if (!writable || !profile) return
     setBusy(true)
     setMessage('')
@@ -405,25 +486,35 @@ export function SalesPage() {
         return
       }
       if (lines.some((l) => !l.formulaId)) {
-        setMessage('Mỗi dòng cần chọn thành phẩm.')
+        setMessage('Mỗi dòng cần chọn sản phẩm.')
         setBusy(false)
         return
       }
 
       const assignee = managers.find((u) => u.id === assignedTo) || profile
       const orderCode = editingOrder?.code || generateOrderCode()
+      const saveAsDraft = asDraft === true || (asDraft !== false && paidAmount <= 0 && forceDraft)
+      const status: OrderStatusCore =
+        saveAsDraft && paidAmount <= 0
+          ? 'draft'
+          : orderStatusOverride === 'huy'
+            ? 'huy'
+            : statusFromPayment(totalAmount, paidAmount)
+      const shouldDeduct =
+        status !== 'draft' && status !== 'huy' && !(editingOrder?.stockDeducted)
 
       const orderPayload: Omit<Order, 'id'> = {
         code: orderCode,
         customerId: cust.id,
         customerName: cust.name,
-        lines,
+        lines: lines.map((l) => ({ ...l, status })),
         deposit: 0,
         paidAmount,
+        payments: [...payments].sort((a, b) => b.paidAt - a.paidAt),
         contractAmount,
         debt,
         totalAmount,
-        status: orderStatus,
+        status,
         locked: editingOrder?.locked || false,
         contractExported: editingOrder?.contractExported || false,
         note,
@@ -434,12 +525,25 @@ export function SalesPage() {
         createdByName: editingOrder?.createdByName || profile.displayName,
         assignedTo: assignee.id,
         assignedToName: assignee.displayName,
+        stockDeducted: editingOrder?.stockDeducted || shouldDeduct,
       }
 
       if (editingOrder) {
         const oldPaid = orderPaidTotal(editingOrder)
         const oldDebt = editingOrder.debt || 0
         await updateOrder(editingOrder.id, orderPayload)
+        if (shouldDeduct) {
+          const deductItems = buildDeductItems()
+          if (deductItems.length > 0) {
+            await deductStock(deductItems, {
+              orderId: editingOrder.id,
+              orderCode,
+              createdBy: profile.id,
+              createdByName: profile.displayName,
+              note: `Xuất kho đơn ${orderCode}`,
+            })
+          }
+        }
         await updateCustomer(cust.id, {
           totalPurchased: Math.max(0, (cust.totalPurchased || 0) - editingOrder.totalAmount + totalAmount),
           totalDebt: Math.max(0, (cust.totalDebt || 0) - oldDebt + debt),
@@ -449,9 +553,9 @@ export function SalesPage() {
           entityId: editingOrder.id,
           entityLabel: orderCode,
           action: 'update',
-          summary: `Sửa đơn ${orderCode}`,
+          summary: `Sửa đơn ${orderCode} → ${ORDER_STATUS_LABELS[status]}`,
           before: JSON.stringify({ total: editingOrder.totalAmount, paid: oldPaid, status: editingOrder.status }),
-          after: JSON.stringify({ total: totalAmount, paid: paidAmount, status: orderStatus }),
+          after: JSON.stringify({ total: totalAmount, paid: paidAmount, status }),
           userId: profile.id,
           userName: profile.displayName,
           createdAt: Date.now(),
@@ -459,30 +563,18 @@ export function SalesPage() {
         setMessage(`Đã cập nhật đơn ${orderCode}`)
         setDetailOrder({ ...orderPayload, id: editingOrder.id })
       } else {
-        const deductItems = lines.flatMap((line) =>
-          line.items.map((item) => {
-            const mat = materials.find((m) => m.id === item.materialId)
-            const qtyConverted = item.quantityPerUnit * line.quantity
-            const qtyStock = mat
-              ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
-              : qtyConverted
-            return {
-              materialId: item.materialId,
-              materialName: item.materialName,
-              unit: mat?.unit || item.unit,
-              quantity: qtyStock,
-            }
-          }),
-        )
         const id = await createOrder(orderPayload)
-        if (deductItems.length > 0) {
-          await deductStock(deductItems, {
-            orderId: id,
-            orderCode,
-            createdBy: profile.id,
-            createdByName: profile.displayName,
-            note: `Xuất kho đơn ${orderCode}`,
-          })
+        if (shouldDeduct) {
+          const deductItems = buildDeductItems()
+          if (deductItems.length > 0) {
+            await deductStock(deductItems, {
+              orderId: id,
+              orderCode,
+              createdBy: profile.id,
+              createdByName: profile.displayName,
+              note: `Xuất kho đơn ${orderCode}`,
+            })
+          }
         }
         await updateCustomer(cust.id, {
           totalPurchased: (cust.totalPurchased || 0) + totalAmount,
@@ -493,7 +585,7 @@ export function SalesPage() {
           entityId: id,
           entityLabel: orderCode,
           action: 'create',
-          summary: `Tạo đơn ${orderCode}`,
+          summary: `Tạo đơn ${orderCode} (${ORDER_STATUS_LABELS[status]})`,
           userId: profile.id,
           userName: profile.displayName,
           createdAt: Date.now(),
@@ -542,27 +634,146 @@ export function SalesPage() {
     }
   }
 
-  const changeOrderStatus = async (order: Order, status: OrderStatus) => {
-    if (!writable) return
+  const changeOrderStatus = async (order: Order, status: OrderStatusCore) => {
+    if (!writable || !profile) return
     if (order.locked && !canUnlockOrder(profile?.role)) {
       setMessage('Đơn đã khoá.')
       return
     }
-    await updateOrder(order.id, { status })
+    const patch: Partial<Order> = { status }
+    if (status !== 'draft' && status !== 'huy' && !order.stockDeducted) {
+      const deductItems = order.lines.flatMap((line) =>
+        line.items.map((item) => {
+          const mat = materials.find((m) => m.id === item.materialId)
+          const qtyConverted = item.quantityPerUnit * line.quantity
+          const qtyStock = mat
+            ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
+            : qtyConverted
+          return {
+            materialId: item.materialId,
+            materialName: item.materialName,
+            unit: mat?.unit || item.unit,
+            quantity: qtyStock,
+          }
+        }),
+      )
+      if (deductItems.length > 0) {
+        await deductStock(deductItems, {
+          orderId: order.id,
+          orderCode: order.code,
+          createdBy: profile.id,
+          createdByName: profile.displayName,
+          note: `Xuất kho đơn ${order.code}`,
+        })
+      }
+      patch.stockDeducted = true
+    }
+    await updateOrder(order.id, patch)
     await createAuditLog({
       entityType: 'order',
       entityId: order.id,
       entityLabel: order.code,
       action: 'update',
       summary: `Đổi trạng thái đơn ${order.code} → ${ORDER_STATUS_LABELS[status]}`,
-      userId: profile?.id || '',
-      userName: profile?.displayName || '',
+      userId: profile.id,
+      userName: profile.displayName,
       createdAt: Date.now(),
     })
-    setDetailOrder({ ...order, status })
+    setDetailOrder({ ...order, ...patch })
   }
 
-  const activeOrders = orders.filter((o) => o.status !== 'da_giao' && o.status !== 'huy')
+  const addDetailPayment = async () => {
+    if (!writable || !profile || !detailOrder || detailPayAmount <= 0) return
+    if (detailOrder.locked && !canUnlockOrder(profile.role)) {
+      setMessage('Đơn đã khoá.')
+      return
+    }
+    setDetailPayBusy(true)
+    try {
+      const nextPayments = [
+        {
+          id: uid(),
+          amount: detailPayAmount,
+          note: detailPayNote.trim(),
+          paidAt: parseDatetimeLocal(detailPayAt),
+          createdBy: profile.id,
+          createdByName: profile.displayName,
+        },
+        ...orderPaymentsList(detailOrder),
+      ]
+      const paid = nextPayments.reduce((s, p) => s + p.amount, 0)
+      const nextDebt = Math.max(0, detailOrder.totalAmount - paid)
+      const nextStatus =
+        normalizeOrderStatus(detailOrder.status) === 'huy'
+          ? ('huy' as OrderStatusCore)
+          : statusFromPayment(detailOrder.totalAmount, paid)
+      const patch: Partial<Order> = {
+        payments: nextPayments,
+        paidAmount: paid,
+        deposit: 0,
+        debt: nextDebt,
+        status: nextStatus,
+      }
+      if (nextStatus !== 'draft' && nextStatus !== 'huy' && !detailOrder.stockDeducted) {
+        const deductItems = detailOrder.lines.flatMap((line) =>
+          line.items.map((item) => {
+            const mat = materials.find((m) => m.id === item.materialId)
+            const qtyConverted = item.quantityPerUnit * line.quantity
+            const qtyStock = mat
+              ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
+              : qtyConverted
+            return {
+              materialId: item.materialId,
+              materialName: item.materialName,
+              unit: mat?.unit || item.unit,
+              quantity: qtyStock,
+            }
+          }),
+        )
+        if (deductItems.length > 0) {
+          await deductStock(deductItems, {
+            orderId: detailOrder.id,
+            orderCode: detailOrder.code,
+            createdBy: profile.id,
+            createdByName: profile.displayName,
+            note: `Xuất kho đơn ${detailOrder.code}`,
+          })
+        }
+        patch.stockDeducted = true
+      }
+      const cust = customers.find((c) => c.id === detailOrder.customerId)
+      await updateOrder(detailOrder.id, patch)
+      if (cust) {
+        await updateCustomer(cust.id, {
+          totalDebt: Math.max(0, (cust.totalDebt || 0) - detailOrder.debt + nextDebt),
+        })
+      }
+      await createAuditLog({
+        entityType: 'order',
+        entityId: detailOrder.id,
+        entityLabel: detailOrder.code,
+        action: 'update',
+        summary: `Thanh toán ${formatMoney(detailPayAmount)} cho đơn ${detailOrder.code}`,
+        userId: profile.id,
+        userName: profile.displayName,
+        createdAt: Date.now(),
+      })
+      setDetailOrder({ ...detailOrder, ...patch })
+      setDetailPayAmount(0)
+      setDetailPayNote('')
+      setDetailPayAt(datetimeLocalValue(Date.now()))
+      setMessage(`Đã ghi nhận thanh toán ${formatMoney(detailPayAmount)}`)
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Lỗi ghi thanh toán')
+    } finally {
+      setDetailPayBusy(false)
+    }
+  }
+
+  const activeOrders = orders.filter((o) => {
+    const s = normalizeOrderStatus(o.status)
+    return s !== 'hoan_thien' && s !== 'huy'
+  })
 
   return (
     <div>
@@ -629,7 +840,7 @@ export function SalesPage() {
             {lines.map((line, idx) => (
               <Bento
                 key={line.id}
-                title={`Thành phẩm ${idx + 1}`}
+                title={`Sản phẩm ${idx + 1}`}
                 subtitle={line.unit ? `Đơn vị: ${line.unit}` : undefined}
                 action={
                   lines.length > 1 && writable ? (
@@ -640,8 +851,8 @@ export function SalesPage() {
                 }
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Select label="Thành phẩm" value={line.formulaId} disabled={!writable} onChange={(e) => pickFormula(line.id, e.target.value)}>
-                    <option value="">— Chọn thành phẩm —</option>
+                  <Select label="Sản phẩm" value={line.formulaId} disabled={!writable} onChange={(e) => pickFormula(line.id, e.target.value)}>
+                    <option value="">— Chọn sản phẩm —</option>
                     {activeFormulas.map((f) => (
                       <option key={f.id} value={f.id}>{f.name} ({f.unit})</option>
                     ))}
@@ -730,7 +941,7 @@ export function SalesPage() {
 
             {writable && (
               <Button variant="outline" className="w-full" onClick={() => setLines((p) => [...p, emptyLine()])}>
-                <Plus size={16} /> Thêm thành phẩm
+                <Plus size={16} /> Thêm sản phẩm
               </Button>
             )}
           </div>
@@ -738,7 +949,7 @@ export function SalesPage() {
           <div className="space-y-3 lg:col-span-2">
             <Bento title="Vật liệu cần xuất kho">
               {materialNeed.length === 0 ? (
-                <Empty text="Chọn thành phẩm để xem vật liệu." />
+                <Empty text="Chọn sản phẩm để xem vật liệu." />
               ) : (
                 <div className="space-y-2">
                   {materialNeed.map((m) => (
@@ -764,44 +975,118 @@ export function SalesPage() {
               )}
             </Bento>
 
-            <Bento title="Thanh toán">
+            <Bento title="Thanh toán & trạng thái">
               <div className="grid gap-3">
                 <div className="rounded-xl bg-surface/80 p-3">
                   <p className="text-xs uppercase tracking-wider text-muted">Tổng tiền hàng</p>
                   <p className="num text-2xl font-extrabold text-accent">{formatMoney(totalAmount)}</p>
                 </div>
-                <MoneyInput label="Đã thanh toán" value={paidAmount} disabled={!writable} onChange={setPaidAmount} />
+                <div className="rounded-xl bg-ink px-3 py-3 text-surface">
+                  <p className="text-xs uppercase tracking-wider opacity-70">Đã thanh toán</p>
+                  <p className="num text-2xl font-extrabold">{formatMoney(paidAmount)}</p>
+                  <p className="mt-1 text-sm opacity-80">
+                    Công nợ: <strong className="num">{formatMoney(debt)}</strong>
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-line bg-white p-3">
+                  <p className="mb-2 text-sm font-bold">Lịch sử thanh toán</p>
+                  {payments.length === 0 ? (
+                    <p className="mb-3 text-xs text-muted">Chưa có đợt thanh toán. Thêm cọc / thanh toán bên dưới.</p>
+                  ) : (
+                    <div className="mb-3 max-h-48 space-y-2 overflow-y-auto">
+                      {payments.map((p) => (
+                        <div key={p.id} className="flex items-start justify-between gap-2 rounded-xl bg-surface px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="num text-base font-extrabold text-ok">{formatMoney(p.amount)}</p>
+                            <p className="text-xs text-muted">{formatDateTime(p.paidAt)}</p>
+                            {p.note && <p className="text-xs">{p.note}</p>}
+                          </div>
+                          {writable && (
+                            <Button size="sm" variant="ghost" onClick={() => removePaymentRow(p.id)}>
+                              <Trash2 size={14} />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {writable && (
+                    <div className="space-y-2 border-t border-line pt-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Thêm đợt thanh toán</p>
+                      <MoneyInput label="Số tiền" value={payAmount} onChange={setPayAmount} />
+                      <Input
+                        label="Thời gian thanh toán"
+                        type="datetime-local"
+                        value={payAt}
+                        onChange={(e) => setPayAt(e.target.value)}
+                      />
+                      <Input label="Ghi chú đợt" value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Cọc, đợt 1…" />
+                      <Button variant="secondary" className="w-full" disabled={payAmount <= 0} onClick={addPaymentRow}>
+                        <Plus size={14} /> Ghi nhận đợt thanh toán
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
                 <MoneyInput label="Tiền hợp đồng (ghi nhận)" value={contractAmount} disabled={!writable} onChange={setContractAmount} />
-                <p className="text-sm">Công nợ: <strong className="num text-warn">{formatMoney(debt)}</strong></p>
-                <Select label="Trạng thái đơn" value={orderStatus} disabled={!writable} onChange={(e) => setOrderStatus(e.target.value as OrderStatus)}>
-                  {Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </Select>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      disabled={!writable}
-                      onClick={() => setOrderStatus(s)}
-                      className={cn(
-                        'rounded-lg px-2 py-1 text-xs font-semibold',
-                        ORDER_STATUS_COLORS[s].bg,
-                        ORDER_STATUS_COLORS[s].text,
-                        orderStatus === s ? 'ring-2 ring-ink/30' : 'opacity-70',
-                      )}
-                    >
-                      {ORDER_STATUS_LABELS[s]}
-                    </button>
-                  ))}
+
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted">Trạng thái (tự động theo thanh toán)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ORDER_STATUS_CORE.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        disabled={!writable || (s !== 'draft' && s !== 'huy' && s !== autoStatus)}
+                        onClick={() => {
+                          if (s === 'draft') {
+                            setForceDraft(true)
+                            setOrderStatusOverride(null)
+                          } else if (s === 'huy') {
+                            setOrderStatusOverride('huy')
+                            setForceDraft(false)
+                          } else {
+                            setForceDraft(false)
+                            setOrderStatusOverride(null)
+                          }
+                        }}
+                        className={cn(
+                          'rounded-lg px-3 py-1.5 text-sm font-semibold',
+                          ORDER_STATUS_COLORS[s].bg,
+                          ORDER_STATUS_COLORS[s].text,
+                          orderStatus === s ? 'ring-2 ring-ink/30' : 'opacity-70',
+                        )}
+                      >
+                        {ORDER_STATUS_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    Không cọc → Draft · Có cọc → Đang làm · Đủ tiền → Hoàn thiện. Đơn Draft chưa trừ kho.
+                  </p>
                 </div>
                 <Textarea label="Ghi chú" value={note} disabled={!writable} onChange={(e) => setNote(e.target.value)} />
               </div>
             </Bento>
 
             {writable && (
-              <Button size="lg" disabled={busy} onClick={confirmOrder}>
-                {busy ? 'Đang lưu…' : editingOrder ? 'Lưu chỉnh sửa' : 'Tạo đơn hàng'}
-              </Button>
+              <div className="grid gap-2">
+                <Button size="lg" disabled={busy} onClick={() => confirmOrder(false)}>
+                  {busy ? 'Đang lưu…' : editingOrder ? 'Lưu đơn hàng' : 'Chốt đơn hàng'}
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    setForceDraft(true)
+                    void confirmOrder(true)
+                  }}
+                >
+                  Lưu Draft (nháp)
+                </Button>
+              </div>
             )}
             {message && <p className="text-sm font-medium text-info">{message}</p>}
           </div>
@@ -899,15 +1184,56 @@ export function SalesPage() {
             <div className="flex flex-wrap gap-2">
               <StatusBadge status={detailOrder.status} />
               {detailOrder.locked && <Badge tone="warn">Đã khoá</Badge>}
+              {normalizeOrderStatus(detailOrder.status) === 'draft' && (
+                <Badge tone="info">Chưa trừ kho</Badge>
+              )}
             </div>
             <div className="grid gap-2 text-sm sm:grid-cols-2">
               <p><span className="text-muted">Khách:</span> {detailOrder.customerName}</p>
               <p><span className="text-muted">Thời gian:</span> {formatDateTime(detailOrder.orderAt)}</p>
               <p><span className="text-muted">Người phụ trách:</span> {detailOrder.assignedToName || detailOrder.createdByName || '—'}</p>
               <p><span className="text-muted">Tổng:</span> <strong className="num">{formatMoney(detailOrder.totalAmount)}</strong></p>
-              <p><span className="text-muted">Đã thanh toán:</span> {formatMoney(orderPaidTotal(detailOrder))}</p>
+              <p><span className="text-muted">Đã thanh toán:</span> <strong className="num text-ok">{formatMoney(orderPaidTotal(detailOrder))}</strong></p>
               <p><span className="text-muted">Công nợ:</span> <strong className="text-warn">{formatMoney(detailOrder.debt)}</strong></p>
             </div>
+
+            <div className="rounded-2xl border-2 border-ink/10 bg-surface p-4">
+              <p className="mb-1 font-display text-lg font-bold">Lịch sử thanh toán</p>
+              <p className="mb-3 text-xs text-muted">Mỗi đợt ghi rõ số tiền và thời gian thanh toán</p>
+              {orderPaymentsList(detailOrder).length === 0 ? (
+                <p className="mb-3 text-sm text-muted">Chưa có thanh toán / cọc.</p>
+              ) : (
+                <div className="mb-4 space-y-2">
+                  {orderPaymentsList(detailOrder).map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 shadow-sm">
+                      <div>
+                        <p className="num text-xl font-extrabold text-ok">{formatMoney(p.amount)}</p>
+                        <p className="text-sm font-medium text-ink">{formatDateTime(p.paidAt)}</p>
+                        {p.note && <p className="text-xs text-muted">{p.note}</p>}
+                        {p.createdByName && <p className="text-xs text-muted">Ghi bởi {p.createdByName}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {writable && !(detailOrder.locked && !canUnlockOrder(profile?.role)) && (
+                <div className="space-y-2 rounded-xl border border-dashed border-line bg-white p-3">
+                  <p className="text-sm font-semibold">Thêm đợt thanh toán</p>
+                  <MoneyInput label="Số tiền" value={detailPayAmount} onChange={setDetailPayAmount} />
+                  <Input
+                    label="Thời gian thanh toán"
+                    type="datetime-local"
+                    value={detailPayAt}
+                    onChange={(e) => setDetailPayAt(e.target.value)}
+                  />
+                  <Input label="Ghi chú" value={detailPayNote} onChange={(e) => setDetailPayNote(e.target.value)} placeholder="Cọc, đợt 2…" />
+                  <Button className="w-full" disabled={detailPayBusy || detailPayAmount <= 0} onClick={addDetailPayment}>
+                    {detailPayBusy ? 'Đang lưu…' : 'Ghi nhận thanh toán'}
+                  </Button>
+                </div>
+              )}
+            </div>
+
             {detailOrder.lines.map((l) => (
               <div key={l.id} className="rounded-2xl bg-surface px-3 py-3">
                 <p className="font-semibold">{l.formulaName} × {formatNumber(l.quantity)} {l.unit}</p>
@@ -917,22 +1243,20 @@ export function SalesPage() {
             ))}
             {writable && (
               <div className="grid gap-2">
-                <Select
-                  label="Đổi trạng thái"
-                  value={detailOrder.status}
-                  disabled={detailOrder.locked && !canUnlockOrder(profile?.role)}
-                  onChange={(e) => changeOrderStatus(detailOrder, e.target.value as OrderStatus)}
-                >
-                  {Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </Select>
+                <p className="text-xs font-medium text-muted">Đổi trạng thái thủ công</p>
                 <div className="flex flex-wrap gap-2">
-                  {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
+                  {ORDER_STATUS_CORE.map((s) => (
                     <button
                       key={s}
                       type="button"
                       disabled={detailOrder.locked && !canUnlockOrder(profile?.role)}
                       onClick={() => changeOrderStatus(detailOrder, s)}
-                      className={cn('rounded-lg px-2 py-1 text-xs font-semibold', ORDER_STATUS_COLORS[s].bg, ORDER_STATUS_COLORS[s].text)}
+                      className={cn(
+                        'rounded-lg px-3 py-1.5 text-sm font-semibold',
+                        ORDER_STATUS_COLORS[s].bg,
+                        ORDER_STATUS_COLORS[s].text,
+                        normalizeOrderStatus(detailOrder.status) === s ? 'ring-2 ring-ink/30' : 'opacity-80',
+                      )}
                     >
                       {ORDER_STATUS_LABELS[s]}
                     </button>

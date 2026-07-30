@@ -12,7 +12,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge, Bento, Button, Empty, PageHeader, StatBig, Tabs } from '@/components/ui'
 import { watchCustomers, watchMaterials, watchOrders, watchPayments } from '@/lib/store'
 import type { Customer, DebtPayment, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal } from '@/types'
 import {
   formatDateTime,
   formatMoney,
@@ -51,10 +51,13 @@ export function ReportsPage() {
     () => orders.filter((o) => o.orderAt >= range.from && o.orderAt <= range.to),
     [orders, range.from, range.to],
   )
-  const activeOrders = periodOrders.filter((o) => o.status !== 'huy')
+  const activeOrders = periodOrders.filter((o) => {
+    const s = normalizeOrderStatus(o.status)
+    return s !== 'huy' && s !== 'draft'
+  })
   const sales = activeOrders.reduce((s, o) => s + o.totalAmount, 0)
-  const deposit = activeOrders.reduce((s, o) => s + ((o.paidAmount || 0) + (o.deposit || 0)), 0)
-  const paid = activeOrders.reduce((s, o) => s + (o.paidAmount || 0), 0)
+  const deposit = activeOrders.reduce((s, o) => s + orderPaidTotal(o), 0)
+  const paid = deposit
   const debtPeriod = activeOrders.reduce((s, o) => s + (o.debt || 0), 0)
   const totalDebt = customers.reduce((s, c) => s + (c.totalDebt || 0), 0)
 
@@ -66,7 +69,7 @@ export function ReportsPage() {
   }
 
   const cust = customers.find((c) => c.id === selectedCustomer)
-  const custOrders = orders.filter((o) => o.customerId === selectedCustomer && o.status !== 'huy')
+  const custOrders = orders.filter((o) => o.customerId === selectedCustomer && normalizeOrderStatus(o.status) !== 'huy')
   const custPayments = payments.filter((p) => p.customerId === selectedCustomer)
 
   return (
@@ -157,7 +160,7 @@ export function ReportsPage() {
                       </div>
                       <div className="text-right">
                         <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
-                        <Badge tone="accent">{ORDER_STATUS_LABELS[o.status]}</Badge>
+                        <Badge tone="accent">{ORDER_STATUS_LABELS[normalizeOrderStatus(o.status)]}</Badge>
                       </div>
                     </div>
                   ))}

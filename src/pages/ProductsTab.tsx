@@ -137,12 +137,12 @@ export function ProductsTab({
         entityId: edit.id,
         entityLabel: name.trim(),
         action: 'update',
-        summary: `Sửa thành phẩm "${name.trim()}"`,
+        summary: `Sửa sản phẩm "${name.trim()}"`,
         userId: profile?.id || '',
         userName: profile?.displayName || '',
         createdAt: Date.now(),
       })
-      onMsg('Đã cập nhật thành phẩm.')
+      onMsg('Đã cập nhật sản phẩm.')
     } else {
       const id = await createFormula({ ...data, history: [], active: true, createdAt: Date.now() })
       await createAuditLog({
@@ -150,12 +150,12 @@ export function ProductsTab({
         entityId: id,
         entityLabel: name.trim(),
         action: 'create',
-        summary: `Tạo thành phẩm "${name.trim()}"`,
+        summary: `Tạo sản phẩm "${name.trim()}"`,
         userId: profile?.id || '',
         userName: profile?.displayName || '',
         createdAt: Date.now(),
       })
-      onMsg('Đã thêm thành phẩm.')
+      onMsg('Đã thêm sản phẩm.')
     }
     setOpen(false)
   }
@@ -165,7 +165,7 @@ export function ProductsTab({
       <div className="mb-3 flex justify-end">
         {writable && (
           <Button onClick={openNew}>
-            <Plus size={16} /> Thêm thành phẩm
+            <Plus size={16} /> Thêm sản phẩm
           </Button>
         )}
       </div>
@@ -198,19 +198,19 @@ export function ProductsTab({
                     size="sm"
                     variant="ghost"
                     onClick={async () => {
-                      if (!confirm(`Xoá thành phẩm ${f.name}?`)) return
+                      if (!confirm(`Xoá sản phẩm ${f.name}?`)) return
                       await deleteFormula(f.id)
                       await createAuditLog({
                         entityType: 'formula',
                         entityId: f.id,
                         entityLabel: f.name,
                         action: 'delete',
-                        summary: `Xoá thành phẩm "${f.name}"`,
+                        summary: `Xoá sản phẩm "${f.name}"`,
                         userId: profile?.id || '',
                         userName: profile?.displayName || '',
                         createdAt: Date.now(),
                       })
-                      onMsg('Đã xoá thành phẩm.')
+                      onMsg('Đã xoá sản phẩm.')
                     }}
                   >
                     <Trash2 size={14} />
@@ -221,16 +221,16 @@ export function ProductsTab({
           )
         })}
       </div>
-      {formulas.length === 0 && <Empty text="Thêm thành phẩm (vd: bê tông nhựa C13)." />}
+      {formulas.length === 0 && <Empty text="Thêm sản phẩm (vd: bê tông nhựa C13)." />}
 
-      <Modal open={open} onClose={() => setOpen(false)} title={edit ? 'Chỉnh sửa thành phẩm' : 'Thêm thành phẩm'} wide>
+      <Modal open={open} onClose={() => setOpen(false)} title={edit ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm'} wide>
         <form className="space-y-4" onSubmit={save}>
           <div className="grid gap-2 sm:grid-cols-[1.2fr_1fr]">
-            <Input label="Tên thành phẩm" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Input label="Tên sản phẩm" value={name} onChange={(e) => setName(e.target.value)} required />
             <Input label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ngắn gọn…" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Select label="Đơn vị thành phẩm" value={unit} onChange={(e) => setUnit(e.target.value)}>
+            <Select label="Đơn vị sản phẩm" value={unit} onChange={(e) => setUnit(e.target.value)}>
               {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </Select>
             <MoneyInput label="Đơn giá mặc định" value={unitPrice} onChange={setUnitPrice} disabled={!writable} />
@@ -289,7 +289,7 @@ export function ProductsTab({
             </div>
           </div>
 
-          <Button type="submit" className="w-full">Lưu thành phẩm</Button>
+          <Button type="submit" className="w-full">Lưu sản phẩm</Button>
         </form>
       </Modal>
     </>

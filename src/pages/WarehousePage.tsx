@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Plus, Trash2, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
-import { Bento, Badge, Button, Empty, Input, Modal, PageHeader, Select, Textarea } from '@/components/ui'
+import { Bento, Badge, Button, Empty, Input, Modal, PageHeader, Select, Tabs, Textarea } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   addStockEntry,
@@ -14,6 +14,8 @@ import type { Conversion, Material, StockEntry, WeightUnit } from '@/types'
 import { allWeightUnits, canWrite } from '@/types'
 import { stockDualUnits } from '@/components/FormulaBuilder'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
+
+type WarehouseTab = 'kho' | 'tong-ket' | 'lich-su'
 
 type StockRow = {
   key: string
@@ -29,6 +31,7 @@ function newRow(): StockRow {
 export function WarehousePage() {
   const { profile } = useAuth()
   const writable = canWrite(profile?.role)
+  const [tab, setTab] = useState<WarehouseTab>('kho')
   const [materials, setMaterials] = useState<Material[]>([])
   const [conversions, setConversions] = useState<Conversion[]>([])
   const [entries, setEntries] = useState<StockEntry[]>([])
@@ -44,6 +47,7 @@ export function WarehousePage() {
   const [historyMat, setHistoryMat] = useState<Material | null>(null)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'import' | 'export'>('all')
 
   const [editMat, setEditMat] = useState<Material | null>(null)
   const [editName, setEditName] = useState('')
@@ -67,9 +71,16 @@ export function WarehousePage() {
   const unitOptions = allWeightUnits()
 
   const importSummary = useMemo(() => {
-    const map = new Map<string, { name: string; unit: string; totalIn: number; totalOut: number; count: number }>()
+    const map = new Map<string, { id: string; name: string; unit: string; totalIn: number; totalOut: number; count: number }>()
     for (const e of entries) {
-      const cur = map.get(e.materialId) || { name: e.materialName, unit: e.unit, totalIn: 0, totalOut: 0, count: 0 }
+      const cur = map.get(e.materialId) || {
+        id: e.materialId,
+        name: e.materialName,
+        unit: e.unit,
+        totalIn: 0,
+        totalOut: 0,
+        count: 0,
+      }
       if (e.type === 'export') cur.totalOut += e.quantity
       else cur.totalIn += e.quantity
       cur.count += 1
@@ -79,8 +90,11 @@ export function WarehousePage() {
   }, [entries])
 
   const filteredHistory = useMemo(() => {
-    if (!historyMat) return []
-    let list = entries.filter((e) => e.materialId === historyMat.id)
+    let list = historyMat
+      ? entries.filter((e) => e.materialId === historyMat.id)
+      : [...entries]
+    if (historyFilter === 'import') list = list.filter((e) => e.type !== 'export')
+    if (historyFilter === 'export') list = list.filter((e) => e.type === 'export')
     if (dateFrom) {
       const from = new Date(dateFrom).setHours(0, 0, 0, 0)
       list = list.filter((e) => e.createdAt >= from)
@@ -90,7 +104,7 @@ export function WarehousePage() {
       list = list.filter((e) => e.createdAt <= to)
     }
     return list
-  }, [entries, historyMat, dateFrom, dateTo])
+  }, [entries, historyMat, dateFrom, dateTo, historyFilter])
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -150,120 +164,171 @@ export function WarehousePage() {
     <div>
       <PageHeader
         title="Kho vật liệu"
-        subtitle="Tất cả vật liệu"
-        action={writable ? (
+        subtitle="Tồn kho · tổng kết · lịch sử nhập xuất"
+        action={writable && tab === 'kho' ? (
           <Button onClick={() => { setRows([newRow()]); setOpen(true) }}>
             <Plus size={18} /> Nhập kho
           </Button>
         ) : undefined}
       />
 
-      {active.length === 0 ? (
-        <Empty text="Chưa có vật liệu. Vào Cài đặt → Vật liệu để thêm." />
-      ) : (
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-          {active.map((m) => {
-            const low = m.stock <= m.lowStockAlert
-            const summary = importSummary.find((s) => s.name === m.name)
-            const dual = stockDualUnits(m, conversions)
-            return (
-              <button
-                type="button"
-                key={m.id}
-                onClick={() => setHistoryMat(m)}
-                className={`bento block w-full p-4 text-left animate-fade-up sm:p-5 ${low ? 'border-danger/40 bg-red-50/60' : ''}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-display text-sm font-bold leading-tight sm:text-base">{m.name}</p>
-                  {low && <Badge tone="danger">Thấp</Badge>}
-                </div>
+      <Tabs
+        tabs={[
+          { id: 'kho', label: 'Kho' },
+          { id: 'tong-ket', label: 'Tổng kết kho' },
+          { id: 'lich-su', label: 'Lịch sử nhập xuất' },
+        ]}
+        value={tab}
+        onChange={(id) => setTab(id as WarehouseTab)}
+      />
 
-                <div className="mt-3 space-y-2">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị nhập)</p>
-                    <p className="num text-2xl font-extrabold text-ink sm:text-3xl">
-                      {formatNumber(dual.inputQty)} <span className="text-base font-semibold text-accent">{dual.inputUnit}</span>
-                    </p>
-                  </div>
-                  {dual.convertedQty != null && dual.convertedUnit && (
-                    <div className="rounded-xl bg-surface/80 px-2.5 py-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị quy đổi)</p>
-                      <p className="num text-lg font-extrabold text-ink">
-                        {formatNumber(dual.convertedQty)} <span className="text-sm font-semibold text-accent">{dual.convertedUnit}</span>
-                      </p>
-                      {dual.factor != null && (
-                        <p className="mt-0.5 text-[10px] text-muted">
-                          1 {dual.inputUnit} = {formatNumber(dual.factor)} {dual.convertedUnit}
+      {tab === 'kho' && (
+        <>
+          {active.length === 0 ? (
+            <Empty text="Chưa có vật liệu. Vào Cài đặt → Vật liệu để thêm." />
+          ) : (
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              {active.map((m) => {
+                const low = m.stock <= m.lowStockAlert
+                const dual = stockDualUnits(m, conversions)
+                return (
+                  <button
+                    type="button"
+                    key={m.id}
+                    onClick={() => { setHistoryMat(m); setTab('lich-su') }}
+                    className={`bento block w-full p-4 text-left animate-fade-up sm:p-5 ${low ? 'border-danger/40 bg-red-50/60' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-display text-sm font-bold leading-tight sm:text-base">{m.name}</p>
+                      {low && <Badge tone="danger">Thấp</Badge>}
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị nhập)</p>
+                        <p className="num text-2xl font-extrabold text-ink sm:text-3xl">
+                          {formatNumber(dual.inputQty)}{' '}
+                          <span className="text-base font-semibold text-accent">{dual.inputUnit}</span>
                         </p>
+                      </div>
+                      {dual.convertedQty != null && dual.convertedUnit && (
+                        <div className="rounded-xl bg-surface/80 px-2.5 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị quy đổi)</p>
+                          <p className="num text-lg font-extrabold text-ink">
+                            {formatNumber(dual.convertedQty)}{' '}
+                            <span className="text-sm font-semibold text-accent">{dual.convertedUnit}</span>
+                          </p>
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-
-                {summary && (
-                  <p className="mt-2 text-xs text-muted">
-                    Nhập: {formatNumber(summary.totalIn)} · Xuất: {formatNumber(summary.totalOut)} ({dual.inputUnit})
-                  </p>
-                )}
-                <p className="mt-2 text-xs text-accent">Chạm để xem lộ trình nhập/xuất</p>
-                {writable && (
-                  <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="outline" onClick={() => { setEditMat(m); setEditName(m.name); setEditStock(String(m.stock)); setEditUnit(m.unit) }}>
-                      Sửa
-                    </Button>
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
+                    <p className="mt-2 text-xs text-accent">Chạm → lịch sử vật liệu</p>
+                    {writable && (
+                      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                        <Button size="sm" variant="outline" onClick={() => { setEditMat(m); setEditName(m.name); setEditStock(String(m.stock)); setEditUnit(m.unit) }}>
+                          Sửa
+                        </Button>
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
 
-      <Bento title="Tổng kết nhập kho theo loại" className="mt-4" subtitle="Tổng nhập · tổng xuất · số phiếu">
-        {importSummary.length === 0 ? (
-          <Empty text="Chưa có dữ liệu nhập/xuất." />
-        ) : (
-          <div className="space-y-2">
-            {importSummary.map((s) => (
-              <div key={s.name + s.unit} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-surface/70 px-3 py-2">
-                <span className="font-semibold">{s.name} <span className="text-muted">({s.unit})</span></span>
-                <div className="flex gap-3 text-sm">
-                  <span className="text-ok">+{formatNumber(s.totalIn)}</span>
-                  <span className="text-warn">−{formatNumber(s.totalOut)}</span>
-                  <span className="text-muted">{s.count} phiếu</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Bento>
-
-      <Bento title="Phiếu nhập gần đây" className="mt-4" subtitle="Theo đợt · người nhập · thời gian · ghi chú">
-        {entries.filter((e) => e.type !== 'export').length === 0 ? (
-          <Empty text="Chưa có phiếu nhập kho." />
-        ) : (
-          <div className="space-y-2">
-            {entries.filter((e) => e.type !== 'export').slice(0, 30).map((e) => (
-              <div key={e.id} className="rounded-2xl bg-surface/70 px-3 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-semibold">{e.materialName}</p>
-                    {e.batchLabel && <p className="text-xs text-accent">{e.batchLabel}</p>}
+      {tab === 'tong-ket' && (
+        <Bento title="Tổng kết kho theo loại" subtitle="Tổng nhập · tổng xuất · tồn hiện tại">
+          {importSummary.length === 0 && active.length === 0 ? (
+            <Empty text="Chưa có dữ liệu nhập/xuất." />
+          ) : (
+            <div className="space-y-2">
+              {active.map((m) => {
+                const s = importSummary.find((x) => x.id === m.id)
+                const dual = stockDualUnits(m, conversions)
+                return (
+                  <div key={m.id} className="rounded-xl bg-surface/70 px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold">{m.name}</span>
+                      <span className="num font-bold">
+                        Tồn: {formatNumber(dual.inputQty)} {dual.inputUnit}
+                        {dual.convertedQty != null && dual.convertedUnit && (
+                          <span className="ml-2 text-sm font-semibold text-accent">
+                            ≈ {formatNumber(dual.convertedQty)} {dual.convertedUnit}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-3 text-sm">
+                      <span className="text-ok">Nhập: +{formatNumber(s?.totalIn || 0)} {m.unit}</span>
+                      <span className="text-warn">Xuất: −{formatNumber(s?.totalOut || 0)} {m.unit}</span>
+                      <span className="text-muted">{s?.count || 0} phiếu</span>
+                    </div>
                   </div>
-                  <p className="num font-bold text-ok">+{formatNumber(e.quantity)} {e.unit}</p>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                  <span>{formatDateTime(e.createdAt)}</span>
-                  <span>Người nhập: {e.createdByName || userNames[e.createdBy] || '—'}</span>
-                  <span>Chi phí: {formatMoney(e.cost)}</span>
-                  {e.contractor && <span>NCC: {e.contractor}</span>}
-                  {e.note && <span>Ghi chú: {e.note}</span>}
-                </div>
+                )
+              })}
+            </div>
+          )}
+        </Bento>
+      )}
+
+      {tab === 'lich-su' && (
+        <div className="space-y-3">
+          <Bento title="Bộ lọc lịch sử">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <Select
+                label="Vật liệu"
+                value={historyMat?.id || ''}
+                onChange={(e) => setHistoryMat(active.find((m) => m.id === e.target.value) || null)}
+              >
+                <option value="">— Tất cả —</option>
+                {active.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </Select>
+              <Select label="Loại" value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value as 'all' | 'import' | 'export')}>
+                <option value="all">Tất cả</option>
+                <option value="import">Chỉ nhập</option>
+                <option value="export">Chỉ xuất</option>
+              </Select>
+              <Input label="Từ ngày" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input label="Đến ngày" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </Bento>
+
+          <Bento title="Lịch sử nhập xuất" subtitle={`${filteredHistory.length} phiếu`}>
+            {filteredHistory.length === 0 ? (
+              <Empty text="Không có phiếu trong bộ lọc này." />
+            ) : (
+              <div className="space-y-2">
+                {filteredHistory.slice(0, 80).map((e) => {
+                  const isExport = e.type === 'export'
+                  return (
+                    <div key={e.id} className={`rounded-xl px-3 py-3 ${isExport ? 'bg-red-50/80' : 'bg-green-50/80'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          {isExport ? <ArrowUpRight size={16} className="text-warn" /> : <ArrowDownLeft size={16} className="text-ok" />}
+                          <span className="font-semibold">{isExport ? 'Xuất' : 'Nhập'}</span>
+                          <span className="font-medium">{e.materialName}</span>
+                          {e.batchLabel && <Badge tone="accent">{e.batchLabel}</Badge>}
+                        </div>
+                        <span className={`num shrink-0 font-bold ${isExport ? 'text-warn' : 'text-ok'}`}>
+                          {isExport ? '−' : '+'}{formatNumber(e.quantity)} {e.unit}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted">
+                        {formatDateTime(e.createdAt)}
+                        {` · ${e.createdByName || userNames[e.createdBy] || '—'}`}
+                        {e.orderCode && ` · Đơn ${e.orderCode}`}
+                        {!isExport && ` · Chi phí ${formatMoney(e.cost)}`}
+                        {e.contractor && ` · NCC: ${e.contractor}`}
+                        {e.note && ` · ${e.note}`}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
-        )}
-      </Bento>
+            )}
+          </Bento>
+        </div>
+      )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Nhập kho vật liệu" wide>
         <form className="space-y-3" onSubmit={onSubmit}>
@@ -294,65 +359,10 @@ export function WarehousePage() {
             <Plus size={16} /> Thêm vật liệu tiếp theo
           </Button>
           <Input label="Nhà cung cấp / Nhà thầu" value={contractor} onChange={(e) => setContractor(e.target.value)} />
-          <Textarea label="Ghi chú đợt nhập" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi rõ nội dung, biên bản, vị trí kho…" />
+          <Textarea label="Ghi chú đợt nhập" value={note} onChange={(e) => setNote(e.target.value)} />
           {error && <p className="text-sm text-danger">{error}</p>}
           <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu phiếu nhập'}</Button>
         </form>
-      </Modal>
-
-      <Modal open={!!historyMat} onClose={() => setHistoryMat(null)} title={historyMat ? `Lộ trình: ${historyMat.name}` : ''} wide>
-        {historyMat && (
-          <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Input label="Từ ngày" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-              <Input label="Đến ngày" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
-            <p className="text-sm text-muted">
-              Tồn hiện tại:{' '}
-              <strong className="num">{formatNumber(historyMat.stock)} {historyMat.unit}</strong>
-              {(() => {
-                const dual = stockDualUnits(historyMat, conversions)
-                if (dual.convertedQty == null || !dual.convertedUnit) return null
-                return (
-                  <>
-                    {' · '}
-                    <strong className="num">{formatNumber(dual.convertedQty)} {dual.convertedUnit}</strong>
-                    <span className="text-muted"> (quy đổi)</span>
-                  </>
-                )
-              })()}
-            </p>
-            {filteredHistory.length === 0 ? (
-              <Empty text="Không có phiếu trong khoảng thời gian này." />
-            ) : (
-              <div className="max-h-96 space-y-2 overflow-y-auto">
-                {filteredHistory.map((e) => {
-                  const isExport = e.type === 'export'
-                  return (
-                    <div key={e.id} className={`rounded-xl px-3 py-3 ${isExport ? 'bg-red-50/80' : 'bg-green-50/80'}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          {isExport ? <ArrowUpRight size={16} className="text-warn" /> : <ArrowDownLeft size={16} className="text-ok" />}
-                          <span className="font-semibold">{isExport ? 'Xuất kho' : 'Nhập kho'}</span>
-                          {e.batchLabel && <Badge tone="accent">{e.batchLabel}</Badge>}
-                        </div>
-                        <span className={`num font-bold ${isExport ? 'text-warn' : 'text-ok'}`}>
-                          {isExport ? '−' : '+'}{formatNumber(e.quantity)} {e.unit}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-muted">
-                        {formatDateTime(e.createdAt)}
-                        {e.createdByName && ` · ${e.createdByName}`}
-                        {e.orderCode && ` · Đơn ${e.orderCode}`}
-                        {e.note && ` · ${e.note}`}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </Modal>
 
       <Modal open={!!editMat} onClose={() => setEditMat(null)} title="Sửa vật liệu trong kho">

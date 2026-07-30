@@ -241,7 +241,7 @@ export function FormulaBuilder({
                   )
                 })}
               <span className="inline-flex items-center gap-1 text-xs text-muted">
-                <Equal size={14} /> = 1 thành phẩm
+                <Equal size={14} /> = 1 sản phẩm
               </span>
             </div>
           )}

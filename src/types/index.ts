@@ -26,18 +26,44 @@ export function allWeightUnits(customUnits: string[] = []): string[] {
 }
 
 export type OrderStatus =
+  | 'draft'
+  | 'dang_lam'
+  | 'hoan_thien'
+  | 'huy'
+  /** legacy — vẫn đọc được dữ liệu cũ */
   | 'dat_hang'
   | 'dang_san_xuat'
   | 'da_giao'
-  | 'huy'
   | 'chua_thanh_toan'
 
+/** Trạng thái chính dùng trong UI */
+export type OrderStatusCore = 'draft' | 'dang_lam' | 'hoan_thien' | 'huy'
+
+export const ORDER_STATUS_CORE: OrderStatusCore[] = ['draft', 'dang_lam', 'hoan_thien', 'huy']
+
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  dat_hang: 'Đặt hàng',
-  dang_san_xuat: 'Đang sản xuất',
-  da_giao: 'Đã giao',
+  draft: 'Draft (nháp)',
+  dang_lam: 'Đang làm',
+  hoan_thien: 'Hoàn thiện',
   huy: 'Huỷ',
-  chua_thanh_toan: 'Chưa thanh toán',
+  dat_hang: 'Draft (nháp)',
+  dang_san_xuat: 'Đang làm',
+  da_giao: 'Hoàn thiện',
+  chua_thanh_toan: 'Draft (nháp)',
+}
+
+export function normalizeOrderStatus(s: OrderStatus | undefined): OrderStatusCore {
+  if (s === 'dang_lam' || s === 'dang_san_xuat') return 'dang_lam'
+  if (s === 'hoan_thien' || s === 'da_giao') return 'hoan_thien'
+  if (s === 'huy') return 'huy'
+  return 'draft'
+}
+
+/** Suy ra trạng thái từ số đã thanh toán */
+export function statusFromPayment(totalAmount: number, paidTotal: number): OrderStatusCore {
+  if (paidTotal <= 0) return 'draft'
+  if (paidTotal + 0.5 >= totalAmount && totalAmount > 0) return 'hoan_thien'
+  return 'dang_lam'
 }
 
 /** @deprecated dùng allWeightUnits(settings.customUnits) */
@@ -127,7 +153,7 @@ export interface FormulaVersion {
   createdBy: string
 }
 
-/** Một công thức / tỷ lệ áp dụng cho thành phẩm */
+/** Một công thức / tỷ lệ áp dụng cho sản phẩm */
 export interface ProductRecipe {
   id: string
   label: string
@@ -146,7 +172,7 @@ export interface Formula {
   unitPrice: number
   items: FormulaItem[]
   expression?: FormulaExprToken[]
-  /** Nhiều công thức cho cùng một thành phẩm */
+  /** Nhiều công thức cho cùng một sản phẩm */
   recipes?: ProductRecipe[]
   defaultRecipeId?: string
   /** Vật liệu thành phần (đơn vị tương đương) */
@@ -198,13 +224,22 @@ export interface OrderLine {
   note: string
 }
 
+export interface OrderPayment {
+  id: string
+  amount: number
+  note: string
+  paidAt: number
+  createdBy: string
+  createdByName?: string
+}
+
 export interface Order {
   id: string
   code: string
   customerId: string | null
   customerName: string
   lines: OrderLine[]
-  /** @deprecated gộp vào paidAmount — giữ để tương thích dữ liệu cũ */
+  /** @deprecated gộp vào paidAmount / payments */
   deposit: number
   paidAmount: number
   contractAmount: number
@@ -219,11 +254,14 @@ export interface Order {
   updatedAt: number
   createdBy: string
   createdByName?: string
-  /** Người phụ trách đơn */
   assignedTo?: string
   assignedToName?: string
   confirmedAt?: number
   confirmedBy?: string
+  /** Lịch sử thanh toán nhiều đợt */
+  payments?: OrderPayment[]
+  /** Đã trừ kho chưa (draft chưa trừ) */
+  stockDeducted?: boolean
 }
 
 export interface CompanySettings {
@@ -271,11 +309,14 @@ export const ORDER_STATUS_COLORS: Record<
   OrderStatus,
   { tone: 'default' | 'accent' | 'ok' | 'warn' | 'danger' | 'info'; bg: string; text: string }
 > = {
-  dat_hang: { tone: 'info', bg: 'bg-sky-100', text: 'text-sky-800' },
+  draft: { tone: 'info', bg: 'bg-slate-100', text: 'text-slate-700' },
+  dang_lam: { tone: 'warn', bg: 'bg-amber-100', text: 'text-amber-900' },
+  hoan_thien: { tone: 'ok', bg: 'bg-emerald-100', text: 'text-emerald-800' },
+  huy: { tone: 'danger', bg: 'bg-red-100', text: 'text-red-800' },
+  dat_hang: { tone: 'info', bg: 'bg-slate-100', text: 'text-slate-700' },
   dang_san_xuat: { tone: 'warn', bg: 'bg-amber-100', text: 'text-amber-900' },
   da_giao: { tone: 'ok', bg: 'bg-emerald-100', text: 'text-emerald-800' },
-  huy: { tone: 'danger', bg: 'bg-red-100', text: 'text-red-800' },
-  chua_thanh_toan: { tone: 'accent', bg: 'bg-orange-100', text: 'text-orange-900' },
+  chua_thanh_toan: { tone: 'info', bg: 'bg-slate-100', text: 'text-slate-700' },
 }
 
 /** Tổng tiền dòng = SL × đơn giá + VAT − chiết khấu ± khác */
@@ -298,9 +339,30 @@ export function extraMoneyValue(extra: OrderLineExtra, base: number): number {
   return mode === 'percent' ? (base * (extra.amount || 0)) / 100 : extra.amount || 0
 }
 
-/** Tổng đã thanh toán (gộp cọc cũ + paidAmount) */
-export function orderPaidTotal(o: Pick<Order, 'deposit' | 'paidAmount'>): number {
+/** Tổng đã thanh toán (payments + paidAmount + deposit cũ) */
+export function orderPaidTotal(
+  o: Pick<Order, 'deposit' | 'paidAmount' | 'payments'>,
+): number {
+  if (o.payments?.length) {
+    return o.payments.reduce((s, p) => s + (p.amount || 0), 0)
+  }
   return (o.paidAmount || 0) + (o.deposit || 0)
+}
+
+export function orderPaymentsList(o: Pick<Order, 'payments' | 'paidAmount' | 'deposit' | 'createdAt' | 'createdBy' | 'createdByName'>): OrderPayment[] {
+  if (o.payments?.length) return [...o.payments].sort((a, b) => b.paidAt - a.paidAt)
+  const legacy = (o.paidAmount || 0) + (o.deposit || 0)
+  if (legacy <= 0) return []
+  return [
+    {
+      id: 'legacy',
+      amount: legacy,
+      note: 'Thanh toán (dữ liệu cũ)',
+      paidAt: o.createdAt,
+      createdBy: o.createdBy || '',
+      createdByName: o.createdByName,
+    },
+  ]
 }
 
 export function canWrite(role: UserRole | undefined): boolean {
@@ -356,7 +418,7 @@ export function itemsFromExpression(expression: FormulaExprToken[] | undefined):
   return [...map.values()]
 }
 
-/** Chuẩn hoá thành phẩm cũ → có danh sách recipes */
+/** Chuẩn hoá sản phẩm cũ → có danh sách recipes */
 export function getProductRecipes(f: Formula): ProductRecipe[] {
   if (f.recipes?.length) return f.recipes
   const items = f.items?.length ? f.items : itemsFromExpression(f.expression)

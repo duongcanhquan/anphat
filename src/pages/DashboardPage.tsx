@@ -5,7 +5,7 @@ import { Bento, PageHeader, StatBig, Badge } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { watchCustomers, watchMaterials, watchOrders } from '@/lib/store'
 import type { Customer, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal } from '@/types'
 import { formatMoney, formatNumber, formatDateTime, getPeriodRange } from '@/lib/utils'
 
 export function DashboardPage() {
@@ -27,12 +27,19 @@ export function DashboardPage() {
 
   const today = getPeriodRange('day')
   const todayOrders = useMemo(
-    () => orders.filter((o) => o.orderAt >= today.from && o.orderAt <= today.to && o.status !== 'huy'),
+    () =>
+      orders.filter(
+        (o) =>
+          o.orderAt >= today.from &&
+          o.orderAt <= today.to &&
+          normalizeOrderStatus(o.status) !== 'huy' &&
+          normalizeOrderStatus(o.status) !== 'draft',
+      ),
     [orders, today.from, today.to],
   )
 
   const todaySales = todayOrders.reduce((s, o) => s + (o.totalAmount || 0), 0)
-  const todayPaid = todayOrders.reduce((s, o) => s + ((o.paidAmount || 0) + (o.deposit || 0)), 0)
+  const todayPaid = todayOrders.reduce((s, o) => s + orderPaidTotal(o), 0)
   const totalDebt = customers.reduce((s, c) => s + (c.totalDebt || 0), 0)
   const lowStock = materials.filter((m) => m.active && m.stock <= m.lowStockAlert)
   const recent = orders.slice(0, 6)
@@ -101,7 +108,7 @@ export function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
-                    <Badge tone={statusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</Badge>
+                    <Badge tone={statusTone(o.status)}>{ORDER_STATUS_LABELS[normalizeOrderStatus(o.status)]}</Badge>
                   </div>
                 </div>
               ))}
@@ -130,9 +137,10 @@ export function DashboardPage() {
 }
 
 function statusTone(s: Order['status']) {
-  if (s === 'da_giao') return 'ok' as const
-  if (s === 'huy') return 'danger' as const
-  if (s === 'chua_thanh_toan') return 'warn' as const
-  if (s === 'dang_san_xuat') return 'info' as const
+  const core = normalizeOrderStatus(s)
+  if (core === 'hoan_thien') return 'ok' as const
+  if (core === 'huy') return 'danger' as const
+  if (core === 'draft') return 'info' as const
+  if (core === 'dang_lam') return 'warn' as const
   return 'accent' as const
 }

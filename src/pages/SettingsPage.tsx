@@ -60,11 +60,12 @@ import {
   canDeleteMaterial,
   canManageUsers,
   canWrite,
+  normalizeOrderStatus,
   visibleUsersFor,
 } from '@/types'
 import { cn, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
-type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'thanh-pham' | 'lich-su'
+type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'san-pham' | 'lich-su'
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
@@ -104,7 +105,7 @@ export function SettingsPage() {
     { id: 'khach', label: 'Khách hàng' },
     { id: 'vat-lieu', label: 'Vật liệu' },
     { id: 'quy-doi', label: 'Quy đổi' },
-    { id: 'thanh-pham', label: 'Thành phẩm' },
+    { id: 'san-pham', label: 'Sản phẩm' },
     ...(isSuper ? [{ id: 'lich-su', label: 'Lịch sử' }] : []),
   ]
 
@@ -163,7 +164,7 @@ export function SettingsPage() {
           onMsg={setMsg}
         />
       )}
-      {tab === 'thanh-pham' && (
+      {tab === 'san-pham' && (
         <ProductsTab
           materials={materials}
           formulas={formulas}
@@ -634,13 +635,13 @@ function CustomersTab({
   })
 
   const customerStats = (c: Customer) => {
-    const custOrders = orders.filter((o) => o.customerId === c.id && o.status !== 'huy')
+    const custOrders = orders.filter((o) => o.customerId === c.id && normalizeOrderStatus(o.status) !== 'huy')
     const latest = custOrders[0]
     return {
       debt: c.totalDebt || 0,
       sales: c.totalPurchased || 0,
       orderCount: custOrders.length,
-      latestStatus: latest?.status,
+      latestStatus: latest ? normalizeOrderStatus(latest.status) : undefined,
     }
   }
 
