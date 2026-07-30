@@ -121,5 +121,11 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow update, delete: if isSuper();
     }
+
+    match /auditLogs/{id} {
+      allow read: if isSuper() || isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if isSuper();
+    }
   }
 }

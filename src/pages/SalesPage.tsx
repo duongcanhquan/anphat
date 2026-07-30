@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, Lock, Search } from 'lucide-react'
+import { Plus, Trash2, Lock, Search, Pencil } from 'lucide-react'
 import { MoneyInput } from '@/components/MoneyInput'
 import { FormulaBuilder } from '@/components/FormulaBuilder'
 import {
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
+  createAuditLog,
   createOrder,
   deductStock,
   generateOrderCode,
@@ -26,8 +27,10 @@ import {
   watchFormulas,
   watchMaterials,
   watchOrders,
+  watchUsers,
 } from '@/lib/store'
 import type {
+  AppUser,
   Customer,
   Formula,
   FormulaItem,
@@ -39,16 +42,19 @@ import type {
   ProductRecipe,
 } from '@/types'
 import {
+  ORDER_STATUS_COLORS,
   ORDER_STATUS_LABELS,
   calcLineTotal,
   canUnlockOrder,
   canWrite,
+  extraMoneyValue,
   getDefaultRecipe,
   getProductRecipes,
   itemsFromExpression,
+  orderPaidTotal,
   recipeItems,
 } from '@/types'
-import { formatDateTime, formatMoney, formatNumber, uid } from '@/lib/utils'
+import { cn, formatDateTime, formatMoney, formatNumber, uid } from '@/lib/utils'
 
 type SalesTab = 'tao-don' | 'don'
 
@@ -68,11 +74,177 @@ function emptyLine(f?: Formula, recipe?: ProductRecipe): OrderLine {
     items,
     recipeId: recipe?.id,
     recipeLabel: recipe?.label,
-    extras: [],
+    extras: [
+      { id: uid(), label: 'VAT', amount: 0, mode: 'percent', type: 'vat' },
+      { id: uid(), label: 'Chiết khấu', amount: 0, mode: 'percent', type: 'discount' },
+    ],
     lineTotal: f ? f.unitPrice : 0,
     status: 'dat_hang',
     note: '',
   }
+}
+
+function StatusBadge({ status }: { status: OrderStatus }) {
+  const c = ORDER_STATUS_COLORS[status]
+  return (
+    <span className={cn('inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold', c.bg, c.text)}>
+      {ORDER_STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+function LineExtrasEditor({
+  line,
+  writable,
+  onChange,
+}: {
+  line: OrderLine
+  writable: boolean
+  onChange: (extras: OrderLineExtra[]) => void
+}) {
+  const base = line.quantity * line.unitPrice
+  const vat = line.extras.find((e) => e.type === 'vat')
+  const discount = line.extras.find((e) => e.type === 'discount')
+  const others = line.extras.filter((e) => e.type === 'other')
+
+  const upsert = (type: 'vat' | 'discount', patch: Partial<OrderLineExtra>) => {
+    const list = [...line.extras]
+    const idx = list.findIndex((e) => e.type === type)
+    if (idx >= 0) list[idx] = { ...list[idx], ...patch }
+    else list.push({ id: uid(), label: type === 'vat' ? 'VAT' : 'Chiết khấu', amount: 0, mode: 'percent', type, ...patch })
+    onChange(list)
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="rounded-xl bg-surface/80 p-3">
+        <p className="mb-2 text-sm font-semibold">VAT (cộng thêm)</p>
+        <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+          <Select
+            label="Kiểu"
+            value={vat?.mode || 'percent'}
+            disabled={!writable}
+            onChange={(e) => upsert('vat', { mode: e.target.value as 'amount' | 'percent' })}
+          >
+            <option value="percent">%</option>
+            <option value="amount">Số tiền</option>
+          </Select>
+          <Input
+            label={vat?.mode === 'amount' ? 'Số tiền VAT' : 'Số % VAT'}
+            type="number"
+            step="any"
+            value={vat?.amount ?? 0}
+            disabled={!writable}
+            onChange={(e) => upsert('vat', { amount: Number(e.target.value) || 0 })}
+          />
+        </div>
+        {vat && (
+          <p className="mt-1 text-xs text-muted">
+            = {formatMoney(extraMoneyValue(vat, base))}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-xl bg-surface/80 p-3">
+        <p className="mb-2 text-sm font-semibold">Chiết khấu (trừ đi)</p>
+        <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+          <Select
+            label="Kiểu"
+            value={discount?.mode || 'percent'}
+            disabled={!writable}
+            onChange={(e) => upsert('discount', { mode: e.target.value as 'amount' | 'percent' })}
+          >
+            <option value="percent">%</option>
+            <option value="amount">Số tiền</option>
+          </Select>
+          <Input
+            label={discount?.mode === 'amount' ? 'Số tiền chiết khấu' : 'Số % chiết khấu'}
+            type="number"
+            step="any"
+            value={discount?.amount ?? 0}
+            disabled={!writable}
+            onChange={(e) => upsert('discount', { amount: Number(e.target.value) || 0 })}
+          />
+        </div>
+        {discount && (
+          <p className="mt-1 text-xs text-muted">
+            = −{formatMoney(extraMoneyValue(discount, base))}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-xl bg-surface/80 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-semibold">Khác</p>
+          {writable && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                onChange([
+                  ...line.extras,
+                  { id: uid(), label: '', amount: 0, mode: 'amount', type: 'other' },
+                ])
+              }
+            >
+              <Plus size={14} /> Thêm mục
+            </Button>
+          )}
+        </div>
+        {others.length === 0 && <p className="text-xs text-muted">Chưa có mục khác.</p>}
+        <div className="space-y-2">
+          {others.map((ex) => (
+            <div key={ex.id} className="grid grid-cols-[1fr_100px_1fr_36px] gap-2">
+              <Input
+                placeholder="Tên mục"
+                value={ex.label}
+                disabled={!writable}
+                onChange={(e) =>
+                  onChange(line.extras.map((x) => (x.id === ex.id ? { ...x, label: e.target.value } : x)))
+                }
+              />
+              <Select
+                value={ex.mode || 'amount'}
+                disabled={!writable}
+                onChange={(e) =>
+                  onChange(
+                    line.extras.map((x) =>
+                      x.id === ex.id ? { ...x, mode: e.target.value as 'amount' | 'percent' } : x,
+                    ),
+                  )
+                }
+              >
+                <option value="amount">vnđ</option>
+                <option value="percent">%</option>
+              </Select>
+              <Input
+                type="number"
+                step="any"
+                value={ex.amount}
+                disabled={!writable}
+                onChange={(e) =>
+                  onChange(
+                    line.extras.map((x) =>
+                      x.id === ex.id ? { ...x, amount: Number(e.target.value) || 0 } : x,
+                    ),
+                  )
+                }
+              />
+              {writable && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onChange(line.extras.filter((x) => x.id !== ex.id))}
+                >
+                  <Trash2 size={14} />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function SalesPage() {
@@ -83,29 +255,37 @@ export function SalesPage() {
   const [materials, setMaterials] = useState<Material[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [orders, setOrders] = useState<Order[]>([])
+  const [users, setUsers] = useState<AppUser[]>([])
 
   const [lines, setLines] = useState<OrderLine[]>([emptyLine()])
   const [customerId, setCustomerId] = useState('')
   const [customerSearch, setCustomerSearch] = useState('')
-  const [deposit, setDeposit] = useState(0)
   const [paidAmount, setPaidAmount] = useState(0)
   const [contractAmount, setContractAmount] = useState(0)
   const [note, setNote] = useState('')
   const [orderStatus, setOrderStatus] = useState<OrderStatus>('dat_hang')
+  const [assignedTo, setAssignedTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [recipePick, setRecipePick] = useState<{ lineId: string; formula: Formula } | null>(null)
   const [ratioModal, setRatioModal] = useState<{ lineId: string; items: FormulaItem[]; materialIds: string[] } | null>(null)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
 
   useEffect(() => {
     const u1 = watchFormulas(setFormulas)
     const u2 = watchCustomers(setCustomers)
     const u3 = watchOrders(setOrders)
     const u4 = watchMaterials(setMaterials)
-    return () => { u1(); u2(); u3(); u4() }
+    const u5 = watchUsers(setUsers)
+    return () => { u1(); u2(); u3(); u4(); u5() }
   }, [])
 
+  useEffect(() => {
+    if (profile && !assignedTo) setAssignedTo(profile.id)
+  }, [profile, assignedTo])
+
+  const managers = users.filter((u) => u.active && (u.role === 'admin' || u.role === 'superadmin'))
   const activeFormulas = formulas.filter((f) => f.active)
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.trim().toLowerCase()
@@ -119,7 +299,7 @@ export function SalesPage() {
   }, [customers, customerSearch])
 
   const totalAmount = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines])
-  const debt = Math.max(0, totalAmount - deposit - paidAmount)
+  const debt = Math.max(0, totalAmount - paidAmount)
 
   const materialNeed = useMemo(() => {
     const map = new Map<string, { name: string; unit: string; qty: number }>()
@@ -169,12 +349,32 @@ export function SalesPage() {
     applyRecipe(lineId, f, getDefaultRecipe(f))
   }
 
-  const addExtra = (lineId: string) => {
-    const line = lines.find((l) => l.id === lineId)
-    if (!line) return
-    updateLine(lineId, {
-      extras: [...line.extras, { id: uid(), label: 'VAT / Chiết khấu', amount: 0, type: 'vat' }],
-    })
+  const resetDraft = () => {
+    setLines([emptyLine()])
+    setPaidAmount(0)
+    setContractAmount(0)
+    setNote('')
+    setCustomerId('')
+    setOrderStatus('dat_hang')
+    setAssignedTo(profile?.id || '')
+    setEditingOrder(null)
+  }
+
+  const loadOrderForEdit = (order: Order) => {
+    if (order.locked && !canUnlockOrder(profile?.role)) {
+      setMessage('Đơn đã khoá — chỉ Superadmin được sửa.')
+      return
+    }
+    setEditingOrder(order)
+    setLines(order.lines.map((l) => ({ ...l, extras: l.extras.map((e) => ({ ...e })) })))
+    setCustomerId(order.customerId || '')
+    setPaidAmount(orderPaidTotal(order))
+    setContractAmount(order.contractAmount || 0)
+    setNote(order.note || '')
+    setOrderStatus(order.status)
+    setAssignedTo(order.assignedTo || order.createdBy || profile?.id || '')
+    setTab('tao-don')
+    setDetailOrder(null)
   }
 
   const confirmOrder = async () => {
@@ -194,66 +394,95 @@ export function SalesPage() {
         return
       }
 
-      const orderCode = generateOrderCode()
-      const deductItems: { materialId: string; quantity: number; materialName: string; unit: string }[] = []
-      for (const line of lines) {
-        for (const item of line.items) {
-          deductItems.push({
-            materialId: item.materialId,
-            materialName: item.materialName,
-            unit: item.unit,
-            quantity: item.quantityPerUnit * line.quantity,
-          })
-        }
-      }
+      const assignee = managers.find((u) => u.id === assignedTo) || profile
+      const orderCode = editingOrder?.code || generateOrderCode()
 
-      const order: Omit<Order, 'id'> = {
+      const orderPayload: Omit<Order, 'id'> = {
         code: orderCode,
         customerId: cust.id,
         customerName: cust.name,
         lines,
-        deposit,
+        deposit: 0,
         paidAmount,
         contractAmount,
         debt,
         totalAmount,
         status: orderStatus,
-        locked: false,
-        contractExported: false,
+        locked: editingOrder?.locked || false,
+        contractExported: editingOrder?.contractExported || false,
         note,
-        orderAt: Date.now(),
-        createdAt: Date.now(),
+        orderAt: editingOrder?.orderAt || Date.now(),
+        createdAt: editingOrder?.createdAt || Date.now(),
         updatedAt: Date.now(),
-        createdBy: profile.id,
+        createdBy: editingOrder?.createdBy || profile.id,
+        createdByName: editingOrder?.createdByName || profile.displayName,
+        assignedTo: assignee.id,
+        assignedToName: assignee.displayName,
       }
-      const id = await createOrder(order)
 
-      if (deductItems.length > 0) {
-        await deductStock(deductItems, {
-          orderId: id,
-          orderCode,
-          createdBy: profile.id,
-          createdByName: profile.displayName,
-          note: `Xuất kho đơn ${orderCode}`,
+      if (editingOrder) {
+        const oldPaid = orderPaidTotal(editingOrder)
+        const oldDebt = editingOrder.debt || 0
+        await updateOrder(editingOrder.id, orderPayload)
+        await updateCustomer(cust.id, {
+          totalPurchased: Math.max(0, (cust.totalPurchased || 0) - editingOrder.totalAmount + totalAmount),
+          totalDebt: Math.max(0, (cust.totalDebt || 0) - oldDebt + debt),
         })
+        await createAuditLog({
+          entityType: 'order',
+          entityId: editingOrder.id,
+          entityLabel: orderCode,
+          action: 'update',
+          summary: `Sửa đơn ${orderCode}`,
+          before: JSON.stringify({ total: editingOrder.totalAmount, paid: oldPaid, status: editingOrder.status }),
+          after: JSON.stringify({ total: totalAmount, paid: paidAmount, status: orderStatus }),
+          userId: profile.id,
+          userName: profile.displayName,
+          createdAt: Date.now(),
+        })
+        setMessage(`Đã cập nhật đơn ${orderCode}`)
+        setDetailOrder({ ...orderPayload, id: editingOrder.id })
+      } else {
+        const deductItems = lines.flatMap((line) =>
+          line.items.map((item) => ({
+            materialId: item.materialId,
+            materialName: item.materialName,
+            unit: item.unit,
+            quantity: item.quantityPerUnit * line.quantity,
+          })),
+        )
+        const id = await createOrder(orderPayload)
+        if (deductItems.length > 0) {
+          await deductStock(deductItems, {
+            orderId: id,
+            orderCode,
+            createdBy: profile.id,
+            createdByName: profile.displayName,
+            note: `Xuất kho đơn ${orderCode}`,
+          })
+        }
+        await updateCustomer(cust.id, {
+          totalPurchased: (cust.totalPurchased || 0) + totalAmount,
+          totalDebt: (cust.totalDebt || 0) + debt,
+        })
+        await createAuditLog({
+          entityType: 'order',
+          entityId: id,
+          entityLabel: orderCode,
+          action: 'create',
+          summary: `Tạo đơn ${orderCode}`,
+          userId: profile.id,
+          userName: profile.displayName,
+          createdAt: Date.now(),
+        })
+        setMessage(`Đã tạo đơn ${orderCode}`)
+        setDetailOrder({ ...orderPayload, id })
       }
 
-      await updateCustomer(cust.id, {
-        totalPurchased: (cust.totalPurchased || 0) + totalAmount,
-        totalDebt: (cust.totalDebt || 0) + debt,
-      })
-
-      setMessage(`Đã tạo đơn ${orderCode}`)
-      setLines([emptyLine()])
-      setDeposit(0)
-      setPaidAmount(0)
-      setContractAmount(0)
-      setNote('')
-      setCustomerId('')
+      resetDraft()
       setTab('don')
-      setDetailOrder({ ...order, id })
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Lỗi tạo đơn')
+      setMessage(err instanceof Error ? err.message : 'Lỗi lưu đơn')
     } finally {
       setBusy(false)
     }
@@ -297,6 +526,16 @@ export function SalesPage() {
       return
     }
     await updateOrder(order.id, { status })
+    await createAuditLog({
+      entityType: 'order',
+      entityId: order.id,
+      entityLabel: order.code,
+      action: 'update',
+      summary: `Đổi trạng thái đơn ${order.code} → ${ORDER_STATUS_LABELS[status]}`,
+      userId: profile?.id || '',
+      userName: profile?.displayName || '',
+      createdAt: Date.now(),
+    })
     setDetailOrder({ ...order, status })
   }
 
@@ -307,7 +546,7 @@ export function SalesPage() {
       <PageHeader title="Bán hàng" subtitle="Tạo đơn hàng và theo dõi đơn đang triển khai" />
       <Tabs
         tabs={[
-          { id: 'tao-don', label: 'Tạo đơn hàng' },
+          { id: 'tao-don', label: editingOrder ? `Sửa ${editingOrder.code}` : 'Tạo đơn hàng' },
           { id: 'don', label: 'Đơn hàng' },
         ]}
         value={tab}
@@ -317,6 +556,13 @@ export function SalesPage() {
       {tab === 'tao-don' && (
         <div className="grid gap-3 lg:grid-cols-5">
           <div className="space-y-3 lg:col-span-3">
+            {editingOrder && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm">
+                <span>Đang sửa đơn <strong>{editingOrder.code}</strong></span>
+                <Button size="sm" variant="outline" onClick={resetDraft}>Huỷ sửa</Button>
+              </div>
+            )}
+
             <Bento title="Khách hàng">
               <div className="mb-3 flex gap-2">
                 <div className="flex-1">
@@ -338,6 +584,21 @@ export function SalesPage() {
                 <option value="">— Chọn khách hàng —</option>
                 {filteredCustomers.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} {c.taxCode ? `(${c.taxCode})` : ''}</option>
+                ))}
+              </Select>
+            </Bento>
+
+            <Bento title="Người phụ trách">
+              <Select
+                label="Chọn Admin / Superadmin"
+                value={assignedTo}
+                disabled={!writable}
+                onChange={(e) => setAssignedTo(e.target.value)}
+              >
+                {managers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName} ({u.role})
+                  </option>
                 ))}
               </Select>
             </Bento>
@@ -397,7 +658,9 @@ export function SalesPage() {
                     onChange={(n) => updateLine(line.id, { unitPrice: n })}
                   />
                   <div className="flex items-end sm:col-span-2">
-                    <p className="text-sm text-muted">Thành tiền: <strong className="num text-accent">{formatMoney(line.lineTotal)}</strong></p>
+                    <p className="text-sm text-muted">
+                      Thành tiền: <strong className="num text-accent">{formatMoney(line.lineTotal)}</strong>
+                    </p>
                   </div>
                 </div>
 
@@ -434,33 +697,11 @@ export function SalesPage() {
                   </div>
                 )}
 
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">VAT / Chiết khấu / Phụ phí</p>
-                    {writable && (
-                      <Button size="sm" variant="ghost" onClick={() => addExtra(line.id)}>
-                        <Plus size={14} /> Thêm
-                      </Button>
-                    )}
-                  </div>
-                  {line.extras.map((ex) => (
-                    <div key={ex.id} className="grid grid-cols-[1fr_100px_1fr_36px] gap-2">
-                      <Input value={ex.label} disabled={!writable} onChange={(e) => updateLine(line.id, { extras: line.extras.map((x) => x.id === ex.id ? { ...x, label: e.target.value } : x) })} />
-                      <Select value={ex.type} disabled={!writable} onChange={(e) => updateLine(line.id, { extras: line.extras.map((x) => x.id === ex.id ? { ...x, type: e.target.value as OrderLineExtra['type'] } : x) })}>
-                        <option value="vat">VAT</option>
-                        <option value="discount">Chiết khấu</option>
-                        <option value="fee">Phí</option>
-                        <option value="other">Khác</option>
-                      </Select>
-                      <MoneyInput label="" value={ex.amount} disabled={!writable} onChange={(n) => updateLine(line.id, { extras: line.extras.map((x) => x.id === ex.id ? { ...x, amount: n } : x) })} />
-                      {writable && (
-                        <Button variant="ghost" size="sm" onClick={() => updateLine(line.id, { extras: line.extras.filter((x) => x.id !== ex.id) })}>
-                          <Trash2 size={14} />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <LineExtrasEditor
+                  line={line}
+                  writable={writable}
+                  onChange={(extras) => updateLine(line.id, { extras })}
+                />
               </Bento>
             ))}
 
@@ -472,7 +713,7 @@ export function SalesPage() {
           </div>
 
           <div className="space-y-3 lg:col-span-2">
-            <Bento title="Vật liệu cần xuất kho" subtitle="Theo công thức đã chọn">
+            <Bento title="Vật liệu cần xuất kho">
               {materialNeed.length === 0 ? (
                 <Empty text="Chọn thành phẩm để xem vật liệu." />
               ) : (
@@ -493,20 +734,37 @@ export function SalesPage() {
                   <p className="text-xs uppercase tracking-wider text-muted">Tổng tiền hàng</p>
                   <p className="num text-2xl font-extrabold text-accent">{formatMoney(totalAmount)}</p>
                 </div>
-                <MoneyInput label="Đặt cọc" value={deposit} disabled={!writable} onChange={setDeposit} />
                 <MoneyInput label="Đã thanh toán" value={paidAmount} disabled={!writable} onChange={setPaidAmount} />
                 <MoneyInput label="Tiền hợp đồng (ghi nhận)" value={contractAmount} disabled={!writable} onChange={setContractAmount} />
                 <p className="text-sm">Công nợ: <strong className="num text-warn">{formatMoney(debt)}</strong></p>
                 <Select label="Trạng thái đơn" value={orderStatus} disabled={!writable} onChange={(e) => setOrderStatus(e.target.value as OrderStatus)}>
                   {Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={!writable}
+                      onClick={() => setOrderStatus(s)}
+                      className={cn(
+                        'rounded-lg px-2 py-1 text-xs font-semibold',
+                        ORDER_STATUS_COLORS[s].bg,
+                        ORDER_STATUS_COLORS[s].text,
+                        orderStatus === s ? 'ring-2 ring-ink/30' : 'opacity-70',
+                      )}
+                    >
+                      {ORDER_STATUS_LABELS[s]}
+                    </button>
+                  ))}
+                </div>
                 <Textarea label="Ghi chú" value={note} disabled={!writable} onChange={(e) => setNote(e.target.value)} />
               </div>
             </Bento>
 
             {writable && (
               <Button size="lg" disabled={busy} onClick={confirmOrder}>
-                {busy ? 'Đang tạo…' : 'Tạo đơn hàng'}
+                {busy ? 'Đang lưu…' : editingOrder ? 'Lưu chỉnh sửa' : 'Tạo đơn hàng'}
               </Button>
             )}
             {message && <p className="text-sm font-medium text-info">{message}</p>}
@@ -520,9 +778,9 @@ export function SalesPage() {
             <Bento title="Đang triển khai" subtitle={`${activeOrders.length} đơn`}>
               <div className="space-y-2">
                 {activeOrders.slice(0, 10).map((o) => (
-                  <button key={o.id} type="button" onClick={() => setDetailOrder(o)} className="flex w-full justify-between rounded-xl bg-surface/70 px-3 py-2 text-left">
+                  <button key={o.id} type="button" onClick={() => setDetailOrder(o)} className="flex w-full items-center justify-between rounded-xl bg-surface/70 px-3 py-2 text-left">
                     <span className="font-semibold">{o.code} · {o.customerName}</span>
-                    <Badge tone="accent">{ORDER_STATUS_LABELS[o.status]}</Badge>
+                    <StatusBadge status={o.status} />
                   </button>
                 ))}
               </div>
@@ -539,9 +797,12 @@ export function SalesPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-display font-bold">{o.code}</p>
                         {o.locked && <Badge tone="warn"><Lock size={10} className="mr-1 inline" />Khoá</Badge>}
-                        <Badge tone="accent">{ORDER_STATUS_LABELS[o.status]}</Badge>
+                        <StatusBadge status={o.status} />
                       </div>
-                      <p className="truncate text-sm text-muted">{o.customerName} · {formatDateTime(o.orderAt)}</p>
+                      <p className="truncate text-sm text-muted">
+                        {o.customerName} · {formatDateTime(o.orderAt)}
+                        {o.assignedToName && ` · PT: ${o.assignedToName}`}
+                      </p>
                     </div>
                     <p className="num shrink-0 text-lg font-extrabold">{formatMoney(o.totalAmount)}</p>
                   </button>
@@ -555,7 +816,6 @@ export function SalesPage() {
       <Modal open={!!recipePick} onClose={() => setRecipePick(null)} title="Chọn công thức">
         {recipePick && (
           <div className="space-y-2">
-            <p className="text-sm text-muted">Thành phẩm <strong>{recipePick.formula.name}</strong> có nhiều công thức:</p>
             {getProductRecipes(recipePick.formula).map((r) => (
               <Button
                 key={r.id}
@@ -576,16 +836,17 @@ export function SalesPage() {
       <Modal open={!!ratioModal} onClose={() => setRatioModal(null)} title="Tùy chỉnh công thức cho đơn này" wide>
         {ratioModal && (
           <div className="space-y-3">
-            <p className="text-sm text-muted">Chỉ áp dụng cho đơn hiện tại — kho sẽ trừ theo tỷ lệ này.</p>
             <FormulaBuilder
               materials={materials}
               materialIds={ratioModal.materialIds}
-              expression={ratioModal.items.flatMap((i, idx) => {
-                const tokens: import('@/types').FormulaExprToken[] = []
-                if (idx > 0) tokens.push({ id: `op-${idx}`, kind: 'op', op: '+' })
-                tokens.push({ id: i.materialId, kind: 'material', materialId: i.materialId, materialName: i.materialName, quantityPerUnit: i.quantityPerUnit, unit: i.unit })
-                return tokens
-              })}
+              expression={ratioModal.items.map((i) => ({
+                id: i.materialId,
+                kind: 'material' as const,
+                materialId: i.materialId,
+                materialName: i.materialName,
+                quantityPerUnit: i.quantityPerUnit,
+                unit: i.unit,
+              }))}
               onChange={(expr) => setRatioModal({ ...ratioModal, items: itemsFromExpression(expr) })}
             />
             <Button className="w-full" onClick={() => { updateLine(ratioModal.lineId, { items: ratioModal.items }); setRatioModal(null) }}>
@@ -599,15 +860,15 @@ export function SalesPage() {
         {detailOrder && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge tone="accent">{ORDER_STATUS_LABELS[detailOrder.status]}</Badge>
+              <StatusBadge status={detailOrder.status} />
               {detailOrder.locked && <Badge tone="warn">Đã khoá</Badge>}
             </div>
             <div className="grid gap-2 text-sm sm:grid-cols-2">
               <p><span className="text-muted">Khách:</span> {detailOrder.customerName}</p>
               <p><span className="text-muted">Thời gian:</span> {formatDateTime(detailOrder.orderAt)}</p>
+              <p><span className="text-muted">Người phụ trách:</span> {detailOrder.assignedToName || detailOrder.createdByName || '—'}</p>
               <p><span className="text-muted">Tổng:</span> <strong className="num">{formatMoney(detailOrder.totalAmount)}</strong></p>
-              <p><span className="text-muted">Cọc:</span> {formatMoney(detailOrder.deposit)}</p>
-              <p><span className="text-muted">Đã thu:</span> {formatMoney(detailOrder.paidAmount)}</p>
+              <p><span className="text-muted">Đã thanh toán:</span> {formatMoney(orderPaidTotal(detailOrder))}</p>
               <p><span className="text-muted">Công nợ:</span> <strong className="text-warn">{formatMoney(detailOrder.debt)}</strong></p>
             </div>
             {detailOrder.lines.map((l) => (
@@ -619,9 +880,32 @@ export function SalesPage() {
             ))}
             {writable && (
               <div className="grid gap-2">
-                <Select label="Đổi trạng thái" value={detailOrder.status} disabled={detailOrder.locked && !canUnlockOrder(profile?.role)} onChange={(e) => changeOrderStatus(detailOrder, e.target.value as OrderStatus)}>
+                <Select
+                  label="Đổi trạng thái"
+                  value={detailOrder.status}
+                  disabled={detailOrder.locked && !canUnlockOrder(profile?.role)}
+                  onChange={(e) => changeOrderStatus(detailOrder, e.target.value as OrderStatus)}
+                >
                   {Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={detailOrder.locked && !canUnlockOrder(profile?.role)}
+                      onClick={() => changeOrderStatus(detailOrder, s)}
+                      className={cn('rounded-lg px-2 py-1 text-xs font-semibold', ORDER_STATUS_COLORS[s].bg, ORDER_STATUS_COLORS[s].text)}
+                    >
+                      {ORDER_STATUS_LABELS[s]}
+                    </button>
+                  ))}
+                </div>
+                {(!detailOrder.locked || canUnlockOrder(profile?.role)) && (
+                  <Button variant="outline" onClick={() => loadOrderForEdit(detailOrder)}>
+                    <Pencil size={14} /> Chỉnh sửa đơn hàng
+                  </Button>
+                )}
                 <Button variant="secondary" disabled={detailOrder.locked && !canUnlockOrder(profile?.role)} onClick={() => lockAndConfirm(detailOrder)}>
                   Xác nhận & khoá đơn
                 </Button>

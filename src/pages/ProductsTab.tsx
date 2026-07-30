@@ -2,22 +2,24 @@ import { useState, type FormEvent } from 'react'
 import { Plus, Star, Trash2 } from 'lucide-react'
 import { FormulaBuilder } from '@/components/FormulaBuilder'
 import { MoneyInput } from '@/components/MoneyInput'
-import { Badge, Bento, Button, Empty, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Badge, Bento, Button, Empty, Input, Modal, Select } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
-import { createFormula, deleteFormula, updateFormula } from '@/lib/store'
-import type { Formula, FormulaExprToken, Material, ProductRecipe, WeightUnit } from '@/types'
+import { createAuditLog, createFormula, deleteFormula, updateFormula } from '@/lib/store'
+import type { Conversion, Formula, FormulaExprToken, Material, ProductRecipe, WeightUnit } from '@/types'
 import { getDefaultRecipe, getProductRecipes, itemsFromExpression } from '@/types'
 import { formatMoney, formatNumber, uid } from '@/lib/utils'
 
 export function ProductsTab({
   materials,
   formulas,
+  conversions = [],
   unitOptions,
   writable,
   onMsg,
 }: {
   materials: Material[]
   formulas: Formula[]
+  conversions?: Conversion[]
   unitOptions: string[]
   writable: boolean
   onMsg: (s: string) => void
@@ -29,7 +31,6 @@ export function ProductsTab({
   const [description, setDescription] = useState('')
   const [unit, setUnit] = useState<WeightUnit>('Tấn')
   const [unitPrice, setUnitPrice] = useState(0)
-  const [materialIds, setMaterialIds] = useState<string[]>([])
   const [recipes, setRecipes] = useState<ProductRecipe[]>([])
   const [activeRecipeId, setActiveRecipeId] = useState('')
   const [newRecipeLabel, setNewRecipeLabel] = useState('')
@@ -42,7 +43,6 @@ export function ProductsTab({
     setDescription('')
     setUnit('Tấn')
     setUnitPrice(0)
-    setMaterialIds([])
     setRecipes([])
     setActiveRecipeId('')
     setNewRecipeLabel('')
@@ -67,36 +67,36 @@ export function ProductsTab({
   }
 
   const openEditProduct = (f: Formula) => {
-    const list = getProductRecipes(f).map((r) => ({ ...r, expression: r.expression.map((t) => ({ ...t })) }))
+    const list = getProductRecipes(f).map((r) => ({
+      ...r,
+      expression: r.expression.filter((t) => t.kind === 'material').map((t) => ({ ...t })),
+    }))
     setEdit(f)
     setName(f.name)
     setDescription(f.description)
     setUnit(f.unit)
     setUnitPrice(f.unitPrice)
-    setMaterialIds(f.materialIds?.length ? f.materialIds : list.flatMap((r) => r.items.map((i) => i.materialId)))
     setRecipes(list)
     setActiveRecipeId(f.defaultRecipeId || list.find((r) => r.isDefault)?.id || list[0]?.id || '')
     setOpen(true)
   }
 
-  const toggleMaterial = (id: string) => {
-    setMaterialIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
-  }
-
   const updateActiveExpression = (expression: FormulaExprToken[]) => {
     if (!activeRecipe) return
-    const items = itemsFromExpression(expression)
+    const matsOnly = expression.filter((t) => t.kind === 'material')
+    const items = itemsFromExpression(matsOnly)
     setRecipes((prev) =>
-      prev.map((r) =>
-        r.id === activeRecipe.id ? { ...r, expression, items } : r,
-      ),
+      prev.map((r) => (r.id === activeRecipe.id ? { ...r, expression: matsOnly, items } : r)),
     )
   }
 
   const addRecipe = () => {
     const label = newRecipeLabel.trim() || `Công thức ${recipes.length + 1}`
     const id = uid()
-    setRecipes((p) => [...p, { id, label, isDefault: false, expression: [], items: [], createdAt: Date.now(), createdBy: profile?.id }])
+    setRecipes((p) => [
+      ...p,
+      { id, label, isDefault: false, expression: [], items: [], createdAt: Date.now(), createdBy: profile?.id },
+    ])
     setActiveRecipeId(id)
     setNewRecipeLabel('')
   }
@@ -115,12 +115,9 @@ export function ProductsTab({
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (!writable) return
-    if (materialIds.length === 0) {
-      onMsg('Chọn ít nhất một vật liệu thành phần.')
-      return
-    }
     const defaultRecipe = recipes.find((r) => r.isDefault) || recipes[0]
     const items = defaultRecipe ? itemsFromExpression(defaultRecipe.expression) : []
+    const materialIds = [...new Set(items.map((i) => i.materialId))]
     const data = {
       name: name.trim(),
       description: description.trim(),
@@ -135,9 +132,29 @@ export function ProductsTab({
     }
     if (edit) {
       await updateFormula(edit.id, { ...data, history: edit.history || [] })
+      await createAuditLog({
+        entityType: 'formula',
+        entityId: edit.id,
+        entityLabel: name.trim(),
+        action: 'update',
+        summary: `Sửa thành phẩm "${name.trim()}"`,
+        userId: profile?.id || '',
+        userName: profile?.displayName || '',
+        createdAt: Date.now(),
+      })
       onMsg('Đã cập nhật thành phẩm.')
     } else {
-      await createFormula({ ...data, history: [], active: true, createdAt: Date.now() })
+      const id = await createFormula({ ...data, history: [], active: true, createdAt: Date.now() })
+      await createAuditLog({
+        entityType: 'formula',
+        entityId: id,
+        entityLabel: name.trim(),
+        action: 'create',
+        summary: `Tạo thành phẩm "${name.trim()}"`,
+        userId: profile?.id || '',
+        userName: profile?.displayName || '',
+        createdAt: Date.now(),
+      })
       onMsg('Đã thêm thành phẩm.')
     }
     setOpen(false)
@@ -157,8 +174,7 @@ export function ProductsTab({
           const recipesList = getProductRecipes(f)
           const def = getDefaultRecipe(f)
           return (
-            <Bento key={f.id} title={f.name} subtitle={`${formatMoney(f.unitPrice)} / ${f.unit}`}>
-              <p className="mb-2 text-xs text-muted">{f.description || '—'}</p>
+            <Bento key={f.id} title={`${f.name}${f.description ? ` — ${f.description}` : ''}`} subtitle={`${formatMoney(f.unitPrice)} / ${f.unit}`}>
               <div className="flex flex-wrap gap-1">
                 {recipesList.map((r) => (
                   <Badge key={r.id} tone={r.id === def.id ? 'accent' : 'ok'}>
@@ -184,6 +200,16 @@ export function ProductsTab({
                     onClick={async () => {
                       if (!confirm(`Xoá thành phẩm ${f.name}?`)) return
                       await deleteFormula(f.id)
+                      await createAuditLog({
+                        entityType: 'formula',
+                        entityId: f.id,
+                        entityLabel: f.name,
+                        action: 'delete',
+                        summary: `Xoá thành phẩm "${f.name}"`,
+                        userId: profile?.id || '',
+                        userName: profile?.displayName || '',
+                        createdAt: Date.now(),
+                      })
                       onMsg('Đã xoá thành phẩm.')
                     }}
                   >
@@ -199,30 +225,15 @@ export function ProductsTab({
 
       <Modal open={open} onClose={() => setOpen(false)} title={edit ? 'Chỉnh sửa thành phẩm' : 'Thêm thành phẩm'} wide>
         <form className="space-y-4" onSubmit={save}>
-          <Input label="Tên thành phẩm" value={name} onChange={(e) => setName(e.target.value)} required />
-          <Textarea label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <div className="grid gap-2 sm:grid-cols-[1.2fr_1fr]">
+            <Input label="Tên thành phẩm" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Input label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ngắn gọn…" />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Select label="Đơn vị thành phẩm" value={unit} onChange={(e) => setUnit(e.target.value)}>
               {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </Select>
             <MoneyInput label="Đơn giá mặc định" value={unitPrice} onChange={setUnitPrice} disabled={!writable} />
-          </div>
-
-          <div className="rounded-2xl border border-line bg-surface/40 p-3">
-            <p className="mb-2 text-sm font-semibold">Vật liệu thành phần (đơn vị tương đương)</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {materials.filter((m) => m.active).map((m) => (
-                <label key={m.id} className="flex cursor-pointer items-center gap-2 rounded-xl bg-card px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={materialIds.includes(m.id)}
-                    onChange={() => toggleMaterial(m.id)}
-                  />
-                  <span className="font-medium">{m.name}</span>
-                  <span className="ml-auto text-xs text-muted">{m.unit}</span>
-                </label>
-              ))}
-            </div>
           </div>
 
           <div className="rounded-2xl border border-dashed border-line p-3">
@@ -256,7 +267,7 @@ export function ProductsTab({
                 </div>
                 <FormulaBuilder
                   materials={materials}
-                  materialIds={materialIds}
+                  conversions={conversions}
                   expression={activeRecipe.expression}
                   onChange={updateActiveExpression}
                   readOnly={!writable}

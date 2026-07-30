@@ -32,7 +32,7 @@ export function DashboardPage() {
   )
 
   const todaySales = todayOrders.reduce((s, o) => s + (o.totalAmount || 0), 0)
-  const todayDeposit = todayOrders.reduce((s, o) => s + (o.deposit || 0), 0)
+  const todayPaid = todayOrders.reduce((s, o) => s + ((o.paidAmount || 0) + (o.deposit || 0)), 0)
   const totalDebt = customers.reduce((s, c) => s + (c.totalDebt || 0), 0)
   const lowStock = materials.filter((m) => m.active && m.stock <= m.lowStockAlert)
   const recent = orders.slice(0, 6)
@@ -50,7 +50,7 @@ export function DashboardPage() {
         </Bento>
         <Bento>
           <div className="flex items-start justify-between">
-            <StatBig label="Đặt cọc hôm nay" value={formatMoney(todayDeposit)} tone="ok" />
+            <StatBig label="Đã thanh toán hôm nay" value={formatMoney(todayPaid)} tone="ok" />
             <Wallet className="text-ok" size={22} />
           </div>
         </Bento>
@@ -77,7 +77,7 @@ export function DashboardPage() {
         <Bento title="Thao tác nhanh" className="lg:col-span-1" subtitle="Chạm một lần">
           <div className="grid gap-2">
             <Link to="/ban-hang" className="flex items-center gap-3 rounded-2xl bg-accent px-4 py-4 font-semibold text-white">
-              <ShoppingCart size={20} /> Tạo đơn / Tính nhanh
+              <ShoppingCart size={20} /> Tạo đơn hàng
             </Link>
             <Link to="/kho" className="flex items-center gap-3 rounded-2xl bg-surface-2 px-4 py-4 font-semibold text-ink">
               <Package size={20} /> Xem kho vật liệu

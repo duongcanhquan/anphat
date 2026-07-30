@@ -26,6 +26,7 @@ import type {
   CompanySettings,
   DebtPayment,
   FormulaItem,
+  AuditLog,
 } from '@/types'
 
 const COL = {
@@ -38,6 +39,7 @@ const COL = {
   orders: 'orders',
   settings: 'settings',
   payments: 'debtPayments',
+  auditLogs: 'auditLogs',
 } as const
 
 export const DEFAULT_SETTINGS: CompanySettings = {
@@ -332,4 +334,19 @@ export function generateOrderCode(date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0')
   const r = Math.floor(Math.random() * 9000) + 1000
   return `AP${y}${m}${d}-${r}`
+}
+
+// ——— Audit logs ———
+export async function createAuditLog(data: Omit<AuditLog, 'id'>) {
+  const ref = await addDoc(collection(db, COL.auditLogs), stripUndefined({ ...data }))
+  return ref.id
+}
+
+export function watchAuditLogs(cb: (items: AuditLog[]) => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL.auditLogs), orderBy('createdAt', 'desc')),
+    (snap) => {
+      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as AuditLog))
+    },
+  )
 }

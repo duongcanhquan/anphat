@@ -175,8 +175,10 @@ export interface Customer {
 export interface OrderLineExtra {
   id: string
   label: string
+  /** Giá trị số tiền hoặc % tuỳ mode */
   amount: number
-  type: 'vat' | 'discount' | 'fee' | 'other'
+  mode?: 'amount' | 'percent'
+  type: 'vat' | 'discount' | 'other'
 }
 
 export interface OrderLine {
@@ -202,6 +204,7 @@ export interface Order {
   customerId: string | null
   customerName: string
   lines: OrderLine[]
+  /** @deprecated gộp vào paidAmount — giữ để tương thích dữ liệu cũ */
   deposit: number
   paidAmount: number
   contractAmount: number
@@ -215,6 +218,10 @@ export interface Order {
   createdAt: number
   updatedAt: number
   createdBy: string
+  createdByName?: string
+  /** Người phụ trách đơn */
+  assignedTo?: string
+  assignedToName?: string
   confirmedAt?: number
   confirmedBy?: string
 }
@@ -245,6 +252,33 @@ export interface DebtPayment {
   createdBy: string
 }
 
+/** Lịch sử chỉnh sửa — Superadmin xem */
+export interface AuditLog {
+  id: string
+  entityType: string
+  entityId: string
+  entityLabel: string
+  action: 'create' | 'update' | 'delete'
+  summary: string
+  before?: string
+  after?: string
+  userId: string
+  userName: string
+  createdAt: number
+}
+
+export const ORDER_STATUS_COLORS: Record<
+  OrderStatus,
+  { tone: 'default' | 'accent' | 'ok' | 'warn' | 'danger' | 'info'; bg: string; text: string }
+> = {
+  dat_hang: { tone: 'info', bg: 'bg-sky-100', text: 'text-sky-800' },
+  dang_san_xuat: { tone: 'warn', bg: 'bg-amber-100', text: 'text-amber-900' },
+  da_giao: { tone: 'ok', bg: 'bg-emerald-100', text: 'text-emerald-800' },
+  huy: { tone: 'danger', bg: 'bg-red-100', text: 'text-red-800' },
+  chua_thanh_toan: { tone: 'accent', bg: 'bg-orange-100', text: 'text-orange-900' },
+}
+
+/** Tổng tiền dòng = SL × đơn giá + VAT − chiết khấu ± khác */
 export function calcLineTotal(
   quantity: number,
   unitPrice: number,
@@ -252,9 +286,21 @@ export function calcLineTotal(
 ): number {
   const base = quantity * unitPrice
   return extras.reduce((sum, e) => {
-    if (e.type === 'discount') return sum - e.amount
-    return sum + e.amount
+    const mode = e.mode || 'amount'
+    const delta = mode === 'percent' ? (base * (e.amount || 0)) / 100 : e.amount || 0
+    if (e.type === 'discount') return sum - delta
+    return sum + delta
   }, base)
+}
+
+export function extraMoneyValue(extra: OrderLineExtra, base: number): number {
+  const mode = extra.mode || 'amount'
+  return mode === 'percent' ? (base * (extra.amount || 0)) / 100 : extra.amount || 0
+}
+
+/** Tổng đã thanh toán (gộp cọc cũ + paidAmount) */
+export function orderPaidTotal(o: Pick<Order, 'deposit' | 'paidAmount'>): number {
+  return (o.paidAmount || 0) + (o.deposit || 0)
 }
 
 export function canWrite(role: UserRole | undefined): boolean {

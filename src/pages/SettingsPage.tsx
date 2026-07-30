@@ -36,40 +36,51 @@ import {
   watchMaterials,
   watchSettings,
   watchUsers,
+  watchOrders,
+  watchAuditLogs,
+  createAuditLog,
 } from '@/lib/store'
 import type {
   AppUser,
+  AuditLog,
   CompanySettings,
   Conversion,
   Customer,
   Formula,
   Material,
+  Order,
   UserRole,
   WeightUnit,
 } from '@/types'
 import {
+  DEFAULT_WEIGHT_UNITS,
+  ORDER_STATUS_COLORS,
+  ORDER_STATUS_LABELS,
   allWeightUnits,
   canDeleteMaterial,
   canManageUsers,
   canWrite,
   visibleUsersFor,
 } from '@/types'
-import { formatMoney, formatNumber } from '@/lib/utils'
+import { cn, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
-type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'thanh-pham'
+type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'thanh-pham' | 'lich-su'
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
   const writable = canWrite(profile?.role)
   const manageUsers = canManageUsers(profile?.role)
+  const isSuper = profile?.role === 'superadmin'
   const [tab, setTab] = useState<SettingsTab>(manageUsers ? 'users' : 'khach')
 
   const [materials, setMaterials] = useState<Material[]>([])
   const [conversions, setConversions] = useState<Conversion[]>([])
   const [formulas, setFormulas] = useState<Formula[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [settings, setSettings] = useState<CompanySettings | null>(null)
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [msg, setMsg] = useState('')
 
   const unitOptions = allWeightUnits(settings?.customUnits || [])
@@ -80,11 +91,13 @@ export function SettingsPage() {
       watchConversions(setConversions),
       watchFormulas(setFormulas),
       watchCustomers(setCustomers),
+      watchOrders(setOrders),
       watchUsers(setUsers),
       watchSettings(setSettings),
     ]
+    if (isSuper) subs.push(watchAuditLogs(setAuditLogs))
     return () => subs.forEach((u) => u())
-  }, [])
+  }, [isSuper])
 
   const tabs = [
     ...(manageUsers ? [{ id: 'users', label: 'Tài khoản' }] : []),
@@ -92,6 +105,7 @@ export function SettingsPage() {
     { id: 'vat-lieu', label: 'Vật liệu' },
     { id: 'quy-doi', label: 'Quy đổi' },
     { id: 'thanh-pham', label: 'Thành phẩm' },
+    ...(isSuper ? [{ id: 'lich-su', label: 'Lịch sử' }] : []),
   ]
 
   return (
@@ -119,7 +133,14 @@ export function SettingsPage() {
         />
       )}
       {tab === 'khach' && (
-        <CustomersTab customers={customers} writable={writable} profileId={profile?.id || ''} onMsg={setMsg} />
+        <CustomersTab
+          customers={customers}
+          orders={orders}
+          writable={writable}
+          profileId={profile?.id || ''}
+          profileName={profile?.displayName || ''}
+          onMsg={setMsg}
+        />
       )}
       {tab === 'vat-lieu' && (
         <MaterialsTab
@@ -128,6 +149,8 @@ export function SettingsPage() {
           customUnits={settings?.customUnits || []}
           writable={writable}
           canDelete={canDeleteMaterial(profile?.role)}
+          profileId={profile?.id || ''}
+          profileName={profile?.displayName || ''}
           onMsg={setMsg}
         />
       )}
@@ -141,8 +164,16 @@ export function SettingsPage() {
         />
       )}
       {tab === 'thanh-pham' && (
-        <ProductsTab materials={materials} formulas={formulas} unitOptions={unitOptions} writable={writable} onMsg={setMsg} />
+        <ProductsTab
+          materials={materials}
+          formulas={formulas}
+          conversions={conversions}
+          unitOptions={unitOptions}
+          writable={writable}
+          onMsg={setMsg}
+        />
       )}
+      {tab === 'lich-su' && isSuper && <AuditHistoryTab logs={auditLogs} />}
     </div>
   )
 }
@@ -150,9 +181,11 @@ export function SettingsPage() {
 function MaterialsTab({
   materials,
   unitOptions,
-  customUnits: _customUnits,
+  customUnits,
   writable,
   canDelete,
+  profileId,
+  profileName,
   onMsg,
 }: {
   materials: Material[]
@@ -160,6 +193,8 @@ function MaterialsTab({
   customUnits: string[]
   writable: boolean
   canDelete: boolean
+  profileId: string
+  profileName: string
   onMsg: (s: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -169,6 +204,8 @@ function MaterialsTab({
   const [unit, setUnit] = useState<WeightUnit>('Tấn')
   const [lowStockAlert, setLowStockAlert] = useState('0')
   const [newUnit, setNewUnit] = useState('')
+  const [editUnitName, setEditUnitName] = useState('')
+  const [editUnitValue, setEditUnitValue] = useState('')
 
   const openNew = () => {
     setEdit(null)
@@ -188,6 +225,87 @@ function MaterialsTab({
     setOpen(true)
   }
 
+  const saveUnits = async (list: string[]) => {
+    const s = await getSettings()
+    await saveSettings({ ...DEFAULT_SETTINGS, ...s, customUnits: list })
+  }
+
+  const addCustomUnit = async () => {
+    const u = newUnit.trim()
+    if (!u) return
+    if (unitOptions.includes(u)) {
+      onMsg('Đơn vị đã tồn tại.')
+      return
+    }
+    const list = [...new Set([...customUnits, u])]
+    await saveUnits(list)
+    await createAuditLog({
+      entityType: 'unit',
+      entityId: u,
+      entityLabel: u,
+      action: 'create',
+      summary: `Thêm đơn vị "${u}"`,
+      userId: profileId,
+      userName: profileName,
+      createdAt: Date.now(),
+    })
+    setNewUnit('')
+    onMsg(`Đã thêm đơn vị "${u}"`)
+  }
+
+  const renameUnit = async () => {
+    const from = editUnitName
+    const to = editUnitValue.trim()
+    if (!from || !to || from === to) return
+    const isDefault = (DEFAULT_WEIGHT_UNITS as readonly string[]).includes(from)
+    let list = [...customUnits]
+    if (isDefault) {
+      // Thêm tên mới vào custom, giữ default gốc trong danh sách hệ thống
+      if (!list.includes(to)) list.push(to)
+    } else {
+      list = list.map((u) => (u === from ? to : u)).filter((u, i, a) => a.indexOf(u) === i)
+    }
+    await saveUnits(list)
+    // Cập nhật vật liệu đang dùng đơn vị cũ
+    for (const m of materials.filter((x) => x.unit === from)) {
+      await updateMaterial(m.id, { unit: to })
+    }
+    await createAuditLog({
+      entityType: 'unit',
+      entityId: to,
+      entityLabel: to,
+      action: 'update',
+      summary: `Đổi đơn vị "${from}" → "${to}"`,
+      userId: profileId,
+      userName: profileName,
+      createdAt: Date.now(),
+    })
+    setEditUnitName('')
+    setEditUnitValue('')
+    onMsg(`Đã đổi đơn vị "${from}" → "${to}"`)
+  }
+
+  const removeUnit = async (u: string) => {
+    if ((DEFAULT_WEIGHT_UNITS as readonly string[]).includes(u)) {
+      onMsg('Không xoá được đơn vị mặc định. Có thể đổi tên bằng cách thêm đơn vị mới.')
+      return
+    }
+    if (!confirm(`Bỏ đơn vị "${u}"?`)) return
+    const list = customUnits.filter((x) => x !== u)
+    await saveUnits(list)
+    await createAuditLog({
+      entityType: 'unit',
+      entityId: u,
+      entityLabel: u,
+      action: 'delete',
+      summary: `Bỏ đơn vị "${u}"`,
+      userId: profileId,
+      userName: profileName,
+      createdAt: Date.now(),
+    })
+    onMsg(`Đã bỏ đơn vị "${u}"`)
+  }
+
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (!writable) return
@@ -200,13 +318,33 @@ function MaterialsTab({
     }
     if (edit) {
       await updateMaterial(edit.id, payload)
+      await createAuditLog({
+        entityType: 'material',
+        entityId: edit.id,
+        entityLabel: name.trim(),
+        action: 'update',
+        summary: `Sửa vật liệu "${name.trim()}"`,
+        userId: profileId,
+        userName: profileName,
+        createdAt: Date.now(),
+      })
       onMsg('Đã cập nhật vật liệu.')
     } else {
-      await createMaterial({
+      const id = await createMaterial({
         ...payload,
         stock: 0,
         avgCost: 0,
         active: true,
+        createdAt: Date.now(),
+      })
+      await createAuditLog({
+        entityType: 'material',
+        entityId: id,
+        entityLabel: name.trim(),
+        action: 'create',
+        summary: `Thêm vật liệu "${name.trim()}"`,
+        userId: profileId,
+        userName: profileName,
         createdAt: Date.now(),
       })
       onMsg('Đã thêm vật liệu.')
@@ -221,38 +359,56 @@ function MaterialsTab({
     }
     if (!confirm(`Xoá vật liệu "${m.name}"? Hành động này có thể ảnh hưởng dữ liệu liên quan.`)) return
     await deleteMaterial(m.id)
+    await createAuditLog({
+      entityType: 'material',
+      entityId: m.id,
+      entityLabel: m.name,
+      action: 'delete',
+      summary: `Xoá vật liệu "${m.name}"`,
+      userId: profileId,
+      userName: profileName,
+      createdAt: Date.now(),
+    })
     onMsg('Đã xoá vật liệu.')
   }
 
   return (
     <>
       {writable && (
-        <Bento title="Đơn vị tính" subtitle="Tấn · Kg · Khối · Lít · Thùng · Bao (+ thêm tùy chỉnh)" className="mb-3">
-          <div className="flex flex-wrap gap-2">
-            {unitOptions.map((u) => (
-              <Badge key={u} tone="accent">{u}</Badge>
-            ))}
+        <Bento title="Đơn vị tính" subtitle="Thêm · sửa · bỏ đơn vị" className="mb-3">
+          <div className="mb-3 flex flex-wrap gap-2">
+            {unitOptions.map((u) => {
+              const isDefault = (DEFAULT_WEIGHT_UNITS as readonly string[]).includes(u)
+              return (
+                <div key={u} className="inline-flex items-center gap-1 rounded-xl bg-accent-soft px-2 py-1">
+                  <Badge tone="accent">{u}</Badge>
+                  <button type="button" className="text-xs font-semibold text-accent" onClick={() => { setEditUnitName(u); setEditUnitValue(u) }}>
+                    Sửa
+                  </button>
+                  {!isDefault && (
+                    <button type="button" className="text-xs text-danger" onClick={() => removeUnit(u)}>
+                      Bỏ
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1">
               <Input label="Thêm đơn vị" value={newUnit} onChange={(e) => setNewUnit(e.target.value)} placeholder="vd: Pallet" />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={async () => {
-                const u = newUnit.trim()
-                if (!u) return
-                const s = await getSettings()
-                const list = [...new Set([...(s.customUnits || []), u])]
-                await saveSettings({ ...DEFAULT_SETTINGS, ...s, customUnits: list })
-                setNewUnit('')
-                onMsg(`Đã thêm đơn vị "${u}"`)
-              }}
-            >
-              Thêm đơn vị
-            </Button>
+            <Button type="button" variant="outline" onClick={addCustomUnit}>Thêm đơn vị</Button>
           </div>
+          {editUnitName && (
+            <div className="mt-3 flex flex-col gap-2 rounded-xl bg-surface/60 p-3 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <Input label={`Đổi tên "${editUnitName}"`} value={editUnitValue} onChange={(e) => setEditUnitValue(e.target.value)} />
+              </div>
+              <Button type="button" onClick={renameUnit}>Lưu tên</Button>
+              <Button type="button" variant="ghost" onClick={() => setEditUnitName('')}>Huỷ</Button>
+            </div>
+          )}
         </Bento>
       )}
       <div className="mb-3 flex justify-end">
@@ -448,13 +604,17 @@ function ConversionsTab({
 
 function CustomersTab({
   customers,
+  orders,
   writable,
   profileId,
+  profileName,
   onMsg,
 }: {
   customers: Customer[]
+  orders: Order[]
   writable: boolean
   profileId: string
+  profileName: string
   onMsg: (s: string) => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -473,6 +633,17 @@ function CustomersTab({
     note: '',
   })
 
+  const customerStats = (c: Customer) => {
+    const custOrders = orders.filter((o) => o.customerId === c.id && o.status !== 'huy')
+    const latest = custOrders[0]
+    return {
+      debt: c.totalDebt || 0,
+      sales: c.totalPurchased || 0,
+      orderCount: custOrders.length,
+      latestStatus: latest?.status,
+    }
+  }
+
   const openNew = () => {
     setEdit(null)
     setForm({ name: '', taxCode: '', address: '', representative: '', phone: '', email: '', note: '' })
@@ -484,14 +655,34 @@ function CustomersTab({
     if (!writable) return
     if (edit) {
       await updateCustomer(edit.id, { ...form, updatedAt: Date.now() })
+      await createAuditLog({
+        entityType: 'customer',
+        entityId: edit.id,
+        entityLabel: form.name,
+        action: 'update',
+        summary: `Sửa khách hàng "${form.name}"`,
+        userId: profileId,
+        userName: profileName,
+        createdAt: Date.now(),
+      })
       onMsg('Đã cập nhật khách hàng.')
     } else {
-      await createCustomer({
+      const id = await createCustomer({
         ...form,
         totalDebt: 0,
         totalPurchased: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+      })
+      await createAuditLog({
+        entityType: 'customer',
+        entityId: id,
+        entityLabel: form.name,
+        action: 'create',
+        summary: `Thêm khách hàng "${form.name}"`,
+        userId: profileId,
+        userName: profileName,
+        createdAt: Date.now(),
       })
       onMsg('Đã thêm khách hàng.')
     }
@@ -575,7 +766,9 @@ function CustomersTab({
         File Excel cột: <strong>Tên, MST, Địa chỉ, Người đại diện, SĐT, Email, Ghi chú</strong>
       </p>
       <div className="space-y-2">
-        {customers.map((c) => (
+        {customers.map((c) => {
+          const stats = customerStats(c)
+          return (
           <Bento key={c.id}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -583,10 +776,23 @@ function CustomersTab({
                 <p className="text-xs text-muted">MST: {c.taxCode || '—'} · {c.representative || '—'}</p>
                 <p className="text-xs text-muted">{c.address}</p>
                 <p className="text-xs text-muted">{c.phone} {c.email}</p>
+                {c.note && <p className="mt-1 text-xs text-muted">Ghi chú: {c.note}</p>}
               </div>
-              <div className="text-right">
-                <p className="text-xs text-muted">Công nợ</p>
-                <p className="num font-bold text-warn">{formatMoney(c.totalDebt || 0)}</p>
+              <div className="text-right space-y-1">
+                <div>
+                  <p className="text-xs text-muted">Công nợ</p>
+                  <p className="num font-bold text-warn">{formatMoney(stats.debt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted">Doanh số</p>
+                  <p className="num font-semibold text-accent">{formatMoney(stats.sales)}</p>
+                </div>
+                <p className="text-xs text-muted">{stats.orderCount} đơn</p>
+                {stats.latestStatus && (
+                  <span className={cn('inline-flex rounded-lg px-2 py-0.5 text-xs font-semibold', ORDER_STATUS_COLORS[stats.latestStatus].bg, ORDER_STATUS_COLORS[stats.latestStatus].text)}>
+                    {ORDER_STATUS_LABELS[stats.latestStatus]}
+                  </span>
+                )}
               </div>
             </div>
             {writable && (
@@ -619,6 +825,16 @@ function CustomersTab({
                   onClick={async () => {
                     if (!confirm(`Xoá khách ${c.name}?`)) return
                     await deleteCustomer(c.id)
+                    await createAuditLog({
+                      entityType: 'customer',
+                      entityId: c.id,
+                      entityLabel: c.name,
+                      action: 'delete',
+                      summary: `Xoá khách hàng "${c.name}"`,
+                      userId: profileId,
+                      userName: profileName,
+                      createdAt: Date.now(),
+                    })
                     onMsg('Đã xoá khách hàng.')
                   }}
                 >
@@ -627,7 +843,8 @@ function CustomersTab({
               </div>
             )}
           </Bento>
-        ))}
+          )
+        })}
         {customers.length === 0 && <Empty text="Chưa có khách hàng." />}
       </div>
 
@@ -889,5 +1106,31 @@ function UsersTab({
         </form>
       </Modal>
     </>
+  )
+}
+
+function AuditHistoryTab({ logs }: { logs: AuditLog[] }) {
+  return (
+    <Bento title="Lịch sử chỉnh sửa" subtitle="Chỉ Superadmin xem được mọi thay đổi của Admin">
+      {logs.length === 0 ? (
+        <Empty text="Chưa có lịch sử chỉnh sửa." />
+      ) : (
+        <div className="space-y-2">
+          {logs.slice(0, 100).map((log) => (
+            <div key={log.id} className="rounded-xl bg-surface/70 px-3 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">{log.summary}</p>
+                <Badge tone={log.action === 'delete' ? 'danger' : log.action === 'create' ? 'ok' : 'info'}>
+                  {log.action}
+                </Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                {formatDateTime(log.createdAt)} · {log.userName} · {log.entityType}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Bento>
   )
 }

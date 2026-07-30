@@ -53,7 +53,7 @@ export function ReportsPage() {
   )
   const activeOrders = periodOrders.filter((o) => o.status !== 'huy')
   const sales = activeOrders.reduce((s, o) => s + o.totalAmount, 0)
-  const deposit = activeOrders.reduce((s, o) => s + (o.deposit || 0), 0)
+  const deposit = activeOrders.reduce((s, o) => s + ((o.paidAmount || 0) + (o.deposit || 0)), 0)
   const paid = activeOrders.reduce((s, o) => s + (o.paidAmount || 0), 0)
   const debtPeriod = activeOrders.reduce((s, o) => s + (o.debt || 0), 0)
   const totalDebt = customers.reduce((s, c) => s + (c.totalDebt || 0), 0)
@@ -129,7 +129,7 @@ export function ReportsPage() {
               <StatBig label="Doanh thu" value={formatMoney(sales)} tone="accent" />
             </Bento>
             <Bento>
-              <StatBig label="Đặt cọc" value={formatMoney(deposit)} tone="ok" />
+              <StatBig label="Đã thanh toán" value={formatMoney(deposit)} tone="ok" />
             </Bento>
             <Bento>
               <StatBig label="Đã thu" value={formatMoney(paid)} />
