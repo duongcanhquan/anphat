@@ -53,17 +53,17 @@ export function DashboardPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Bento className="bg-ink text-surface">
-          <StatBig label="Doanh thu hôm nay" value={formatMoney(todaySales)} hint={`${todayOrders.length} đơn`} tone="accent" />
+          <StatBig label="Hợp đồng hôm nay" value={formatMoney(todaySales)} hint={`${todayOrders.length} đơn`} tone="accent" />
         </Bento>
         <Bento>
           <div className="flex items-start justify-between">
-            <StatBig label="Đã thanh toán hôm nay" value={formatMoney(todayPaid)} tone="ok" />
+            <StatBig label="Thanh toán hôm nay" value={formatMoney(todayPaid)} tone="ok" />
             <Wallet className="text-ok" size={22} />
           </div>
         </Bento>
         <Bento>
           <div className="flex items-start justify-between">
-            <StatBig label="Công nợ chung" value={formatMoney(totalDebt)} tone="warn" />
+            <StatBig label="Công nợ tổng" value={formatMoney(totalDebt)} tone="warn" />
             <Users className="text-warn" size={22} />
           </div>
         </Bento>
