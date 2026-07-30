@@ -53,9 +53,16 @@ export function StatBig({
     danger: 'text-danger',
   }
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs font-medium uppercase tracking-wider text-muted">{label}</p>
-      <p className={cn('num mt-1 text-2xl font-extrabold sm:text-3xl', tones[tone])}>{value}</p>
+      <p
+        className={cn(
+          'num mt-1 break-words text-xl font-extrabold leading-tight sm:text-2xl lg:text-3xl',
+          tones[tone],
+        )}
+      >
+        {value}
+      </p>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </div>
   )
@@ -200,11 +207,11 @@ export function Modal({
 }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
-      <button className="absolute inset-0 bg-ink/50 backdrop-blur-[2px]" onClick={onClose} aria-label="Đóng" />
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <button type="button" className="absolute inset-0 bg-ink/50 backdrop-blur-[2px]" onClick={onClose} aria-label="Đóng" />
       <div
         className={cn(
-          'relative z-10 max-h-[92vh] w-full overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-card p-5 shadow-2xl animate-fade-up',
+          'relative z-10 max-h-[min(92dvh,100%)] w-full overflow-x-hidden overflow-y-auto rounded-t-3xl bg-card p-4 shadow-2xl animate-fade-up sm:rounded-3xl sm:p-5',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
       >
@@ -230,12 +237,12 @@ export function PageHeader({
   action?: ReactNode
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-      <div>
+    <div className="mb-4 flex min-w-0 flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0 flex-1">
         <h1 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted sm:text-base">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }

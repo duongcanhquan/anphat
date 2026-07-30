@@ -127,16 +127,16 @@ export function ReportsPage() {
           </Bento>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Bento className="min-h-[7.5rem]">
+            <Bento className="min-h-[7.5rem] min-w-0">
               <StatBig label="Doanh số" value={formatMoney(sales)} tone="accent" />
             </Bento>
-            <Bento className="min-h-[7.5rem]">
+            <Bento className="min-h-[7.5rem] min-w-0">
               <StatBig label="Đã thanh toán" value={formatMoney(paidTotal)} tone="ok" />
             </Bento>
-            <Bento className="min-h-[7.5rem]">
+            <Bento className="min-h-[7.5rem] min-w-0">
               <StatBig label="Công nợ kỳ" value={formatMoney(debtPeriod)} tone="warn" />
             </Bento>
-            <Bento className="min-h-[7.5rem]">
+            <Bento className="min-h-[7.5rem] min-w-0">
               <StatBig
                 label="Công nợ chung"
                 value={formatMoney(totalDebt)}

@@ -139,7 +139,7 @@ function LineExtrasEditor({
     <div className="mt-3 space-y-3">
       <div className="rounded-xl bg-surface/80 p-3">
         <p className="mb-2 text-sm font-semibold">VAT (cộng thêm)</p>
-        <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+        <div className="grid gap-2 sm:grid-cols-[minmax(7rem,8rem)_minmax(0,1fr)]">
           <Select
             label="Kiểu"
             value={vat?.mode || 'percent'}
@@ -167,7 +167,7 @@ function LineExtrasEditor({
 
       <div className="rounded-xl bg-surface/80 p-3">
         <p className="mb-2 text-sm font-semibold">Chiết khấu (trừ đi)</p>
-        <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+        <div className="grid gap-2 sm:grid-cols-[minmax(7rem,8rem)_minmax(0,1fr)]">
           <Select
             label="Kiểu"
             value={discount?.mode || 'percent'}
@@ -214,7 +214,10 @@ function LineExtrasEditor({
         {others.length === 0 && <p className="text-xs text-muted">Chưa có mục khác.</p>}
         <div className="space-y-2">
           {others.map((ex) => (
-            <div key={ex.id} className="grid grid-cols-[1fr_100px_1fr_36px] gap-2">
+            <div
+              key={ex.id}
+              className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem_minmax(0,1fr)_2.25rem]"
+            >
               <Input
                 placeholder="Tên mục"
                 value={ex.label}
@@ -254,6 +257,7 @@ function LineExtrasEditor({
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="justify-self-end sm:justify-self-auto"
                   onClick={() => onChange(line.extras.filter((x) => x.id !== ex.id))}
                 >
                   <Trash2 size={14} />
@@ -891,7 +895,7 @@ export function SalesPage() {
 
       {tab === 'tao-don' && (
         <div className="grid gap-3 lg:grid-cols-5">
-          <div className="space-y-3 lg:col-span-3">
+          <div className="min-w-0 space-y-3 lg:col-span-3">
             {editingOrder && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm">
                 <span>Đang sửa đơn <strong>{editingOrder.code}</strong></span>
@@ -900,8 +904,8 @@ export function SalesPage() {
             )}
 
             <Bento title="Khách hàng">
-              <div className="mb-3 flex gap-2">
-                <div className="flex-1">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+                <div className="min-w-0 flex-1">
                   <Input
                     label="Tìm khách hàng"
                     value={customerSearch}
@@ -910,8 +914,8 @@ export function SalesPage() {
                     disabled={!writable}
                   />
                 </div>
-                <div className="flex items-end">
-                  <Button type="button" variant="outline" className="h-[42px]" disabled={!writable}>
+                <div className="flex items-end sm:shrink-0">
+                  <Button type="button" variant="outline" className="h-[42px] w-full sm:w-auto" disabled={!writable}>
                     <Search size={16} /> Search
                   </Button>
                 </div>
@@ -1048,7 +1052,7 @@ export function SalesPage() {
             )}
           </div>
 
-          <div className="space-y-3 lg:col-span-2">
+          <div className="min-w-0 space-y-3 lg:col-span-2">
             <Bento title="Vật liệu cần xuất kho">
               {materialNeed.length === 0 ? (
                 <Empty text="Chọn sản phẩm để xem vật liệu." />

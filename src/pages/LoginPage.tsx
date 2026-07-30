@@ -53,7 +53,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden px-4 py-10">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -left-20 top-10 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
         <div className="absolute -right-16 bottom-10 h-80 w-80 rounded-full bg-ink/10 blur-3xl" />

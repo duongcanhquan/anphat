@@ -19,8 +19,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <div className="bento max-w-md space-y-3 p-6 text-center">
+        <div className="flex min-h-dvh w-full items-center justify-center p-4">
+          <div className="bento w-full max-w-md space-y-3 p-6 text-center">
             <p className="font-display text-xl font-bold">Có lỗi hiển thị</p>
             <p className="text-sm text-muted break-words">{this.state.error.message}</p>
             <Button className="w-full" onClick={() => window.location.assign('/')}>

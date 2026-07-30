@@ -186,7 +186,7 @@ export function WarehousePage() {
           {active.length === 0 ? (
             <Empty text="Chưa có vật liệu. Vào Cài đặt → Vật liệu để thêm." />
           ) : (
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {active.map((m) => {
                 const low = m.stock <= m.lowStockAlert
                 const dual = stockDualUnits(m, conversions)
@@ -195,18 +195,18 @@ export function WarehousePage() {
                     type="button"
                     key={m.id}
                     onClick={() => { setHistoryMat(m); setTab('lich-su') }}
-                    className={`bento block w-full p-4 text-left animate-fade-up sm:p-5 ${low ? 'border-danger/40 bg-red-50/60' : ''}`}
+                    className={`bento block w-full min-w-0 p-3 text-left animate-fade-up sm:p-5 ${low ? 'border-danger/40 bg-red-50/60' : ''}`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-display text-sm font-bold leading-tight sm:text-base">{m.name}</p>
+                      <p className="min-w-0 break-words font-display text-sm font-bold leading-tight sm:text-base">{m.name}</p>
                       {low && <Badge tone="danger">Thấp</Badge>}
                     </div>
                     <div className="mt-3 space-y-2">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị nhập)</p>
-                        <p className="num text-2xl font-extrabold text-ink sm:text-3xl">
+                        <p className="num break-words text-xl font-extrabold text-ink sm:text-3xl">
                           {formatNumber(dual.inputQty)}{' '}
-                          <span className="text-base font-semibold text-accent">{dual.inputUnit}</span>
+                          <span className="text-sm font-semibold text-accent sm:text-base">{dual.inputUnit}</span>
                         </p>
                       </div>
                       {dual.convertedQty != null && dual.convertedUnit && (

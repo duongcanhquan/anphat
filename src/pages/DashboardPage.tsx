@@ -52,30 +52,30 @@ export function DashboardPage() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Bento className="bg-ink text-surface">
+        <Bento className="min-w-0 bg-ink text-surface">
           <StatBig label="Hợp đồng hôm nay" value={formatMoney(todaySales)} hint={`${todayOrders.length} đơn`} tone="accent" />
         </Bento>
-        <Bento>
-          <div className="flex items-start justify-between">
+        <Bento className="min-w-0">
+          <div className="flex items-start justify-between gap-2">
             <StatBig label="Thanh toán hôm nay" value={formatMoney(todayPaid)} tone="ok" />
-            <Wallet className="text-ok" size={22} />
+            <Wallet className="shrink-0 text-ok" size={22} />
           </div>
         </Bento>
-        <Bento>
-          <div className="flex items-start justify-between">
+        <Bento className="min-w-0">
+          <div className="flex items-start justify-between gap-2">
             <StatBig label="Công nợ tổng" value={formatMoney(totalDebt)} tone="warn" />
-            <Users className="text-warn" size={22} />
+            <Users className="shrink-0 text-warn" size={22} />
           </div>
         </Bento>
-        <Bento>
-          <div className="flex items-start justify-between">
+        <Bento className="min-w-0">
+          <div className="flex items-start justify-between gap-2">
             <StatBig
               label="Cảnh báo kho"
               value={String(lowStock.length)}
               hint="vật liệu dưới mức"
               tone={lowStock.length ? 'danger' : 'ok'}
             />
-            <AlertTriangle className={lowStock.length ? 'text-danger animate-soft-pulse' : 'text-ok'} size={22} />
+            <AlertTriangle className={`shrink-0 ${lowStock.length ? 'text-danger animate-soft-pulse' : 'text-ok'}`} size={22} />
           </div>
         </Bento>
       </div>

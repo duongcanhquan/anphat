@@ -16,7 +16,7 @@ function Protected({ children }: { children: ReactNode }) {
   const { firebaseUser, profile, loading, authError, logout } = useAuth()
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-dvh w-full items-center justify-center">
         <div className="bento px-8 py-6 text-center">
           <p className="font-display text-xl font-bold">AN PHÁT</p>
           <p className="mt-2 text-sm text-muted animate-soft-pulse">Đang tải…</p>
@@ -26,8 +26,8 @@ function Protected({ children }: { children: ReactNode }) {
   }
   if (firebaseUser && !profile) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="bento max-w-lg space-y-3 p-6">
+      <div className="flex min-h-dvh w-full items-center justify-center p-4">
+        <div className="bento w-full max-w-lg space-y-3 p-6">
           <p className="font-display text-center text-xl font-bold">Không vào được hệ thống</p>
           {isPermissionError(authError) ? (
             <FirestoreSetupHelp detail={authError || undefined} />
@@ -54,8 +54,8 @@ function Protected({ children }: { children: ReactNode }) {
   if (!firebaseUser || !profile) return <Navigate to="/dang-nhap" replace />
   if (!profile.active) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="bento max-w-md p-6 text-center">
+      <div className="flex min-h-dvh w-full items-center justify-center p-4">
+        <div className="bento w-full max-w-md p-6 text-center">
           <p className="font-semibold text-danger">Tài khoản đã bị khoá</p>
           <p className="mt-2 text-sm text-muted">Liên hệ Superadmin để mở lại.</p>
         </div>
