@@ -12,10 +12,13 @@ npm run dev
 
 ## Firebase cần bật
 
+Xem chi tiết: [FIREBASE_SETUP.md](./FIREBASE_SETUP.md)
+
 1. **Authentication** → Sign-in method → **Email/Password**
-2. **Firestore** (đã có) → Deploy rules từ `firestore.rules`
-3. Tài khoản **đầu tiên đăng ký** = **Superadmin**
-4. Superadmin đổi quyền user khác: Cài đặt → Tài khoản
+2. **Firestore** → Rules → Publish (dán rules tạm hoặc file `firestore.rules`)
+3. Authentication → Settings → Authorized domains → thêm domain Vercel
+4. Tài khoản **đầu tiên đăng ký** = **Superadmin**
+5. Superadmin đổi quyền user khác: Cài đặt → Tài khoản
 
 ## Modules
 

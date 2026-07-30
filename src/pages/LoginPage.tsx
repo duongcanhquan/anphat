@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Logo } from '@/components/Logo'
+import { FirestoreSetupHelp, isPermissionError } from '@/components/FirestoreSetupHelp'
 import { Button, Input } from '@/components/ui'
 
 export function LoginPage() {
@@ -17,6 +18,8 @@ export function LoginPage() {
   // Chỉ vào app khi đã có hồ sơ — tránh vòng lặp redirect nếu Firestore lỗi
   if (!loading && firebaseUser && profile) return <Navigate to="/" replace />
 
+  const showPermissionHelp = isPermissionError(error) || isPermissionError(authError)
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -30,11 +33,15 @@ export function LoginPage() {
       if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
         setError('Email hoặc mật khẩu không đúng.')
       } else if (msg.includes('auth/email-already-in-use')) {
-        setError('Email đã được sử dụng.')
+        setError('Email đã được sử dụng. Hãy Đăng nhập, hoặc Publish Firestore Rules rồi thử lại.')
       } else if (msg.includes('auth/weak-password')) {
         setError('Mật khẩu cần ít nhất 6 ký tự.')
       } else if (msg.includes('auth/operation-not-allowed')) {
-        setError('Chưa bật đăng nhập Email/Password trên Firebase. Vào Console → Authentication → Sign-in method → Email/Password.')
+        setError(
+          'Chưa bật đăng nhập Email/Password trên Firebase. Vào Console → Authentication → Sign-in method → Email/Password.',
+        )
+      } else if (msg.includes('insufficient permissions') || msg.includes('permission-denied')) {
+        setError('Missing or insufficient permissions.')
       } else {
         setError(msg)
       }
@@ -93,10 +100,10 @@ export function LoginPage() {
             minLength={6}
           />
 
-          {(error || authError) && (
-            <div className="space-y-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
-              <p>{error || authError}</p>
-              {firebaseUser && !profile && (
+          {showPermissionHelp ? (
+            <div className="space-y-2">
+              <FirestoreSetupHelp />
+              {firebaseUser && (
                 <Button
                   type="button"
                   variant="outline"
@@ -111,6 +118,26 @@ export function LoginPage() {
                 </Button>
               )}
             </div>
+          ) : (
+            (error || authError) && (
+              <div className="space-y-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
+                <p>{error || authError}</p>
+                {firebaseUser && !profile && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={async () => {
+                      await logout()
+                      setError('')
+                    }}
+                  >
+                    Đăng xuất và thử lại
+                  </Button>
+                )}
+              </div>
+            )
           )}
 
           <Button type="submit" className="w-full" size="lg" disabled={busy}>
@@ -125,7 +152,9 @@ export function LoginPage() {
               setError('')
             }}
           >
-            {mode === 'login' ? 'Chưa có tài khoản? Đăng ký (tài khoản đầu = Superadmin)' : 'Đã có tài khoản? Đăng nhập'}
+            {mode === 'login'
+              ? 'Chưa có tài khoản? Đăng ký (tài khoản đầu = Superadmin)'
+              : 'Đã có tài khoản? Đăng nhập'}
           </button>
         </form>
       </div>

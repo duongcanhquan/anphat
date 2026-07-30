@@ -5,12 +5,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isActive() {
-      return signedIn() && userDoc().active == true;
+      return signedIn() && userExists() && userDoc().active == true;
     }
 
     function role() {
@@ -25,11 +29,20 @@ service cloud.firestore {
       return isActive() && role() == 'superadmin';
     }
 
+    // Hồ sơ người dùng — ai đăng nhập cũng đọc được (team nhỏ ≤10)
+    // Tự tạo được đúng document của mình (bootstrap Superadmin)
     match /users/{userId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.auth.uid == userId;
-      allow update: if isSuper() || (signedIn() && request.auth.uid == userId
-        && request.resource.data.role == resource.data.role);
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['email', 'displayName', 'role', 'active', 'createdAt'])
+        && request.resource.data.active == true
+        && request.resource.data.role in ['superadmin', 'admin', 'viewer'];
+      allow update: if isSuper()
+        || (signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.active == resource.data.active);
       allow delete: if isSuper();
     }
 
@@ -72,7 +85,7 @@ service cloud.firestore {
         resource.data.locked != true
         || isSuper()
         || request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['contractExported', 'locked', 'confirmedAt', 'confirmedBy', 'updatedAt'])
+            .hasOnly(['contractExported', 'locked', 'confirmedAt', 'confirmedBy', 'updatedAt', 'status'])
       );
       allow delete: if isSuper();
     }

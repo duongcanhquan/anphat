@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { AppLayout } from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { FirestoreSetupHelp, isPermissionError } from '@/components/FirestoreSetupHelp'
 import { Button } from '@/components/ui'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -26,12 +27,16 @@ function Protected({ children }: { children: ReactNode }) {
   if (firebaseUser && !profile) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="bento max-w-md space-y-3 p-6 text-center">
-          <p className="font-display text-xl font-bold">Không tải được hồ sơ</p>
-          <p className="text-sm text-muted">
-            {authError ||
-              'Kiểm tra Firestore Rules đã deploy và Authentication Email/Password đã bật.'}
-          </p>
+        <div className="bento max-w-lg space-y-3 p-6">
+          <p className="font-display text-center text-xl font-bold">Không vào được hệ thống</p>
+          {isPermissionError(authError) ? (
+            <FirestoreSetupHelp detail={authError || undefined} />
+          ) : (
+            <p className="text-center text-sm text-muted">
+              {authError ||
+                'Kiểm tra Firestore Rules đã Publish và Authentication Email/Password đã bật.'}
+            </p>
+          )}
           <Button
             className="w-full"
             variant="outline"
