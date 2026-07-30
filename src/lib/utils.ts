@@ -6,8 +6,34 @@ export function cn(...inputs: (string | false | null | undefined)[]) {
   return clsx(inputs)
 }
 
+/** Định dạng tiền: nghìn / triệu / tỷ + vnđ */
 export function formatMoney(n: number): string {
-  return new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' ₫'
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  if (abs >= 1_000_000_000) {
+    const v = abs / 1_000_000_000
+    return `${sign}${v % 1 === 0 ? v.toLocaleString('vi-VN') : v.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ vnđ`
+  }
+  if (abs >= 1_000_000) {
+    const v = abs / 1_000_000
+    return `${sign}${v % 1 === 0 ? v.toLocaleString('vi-VN') : v.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu vnđ`
+  }
+  if (abs >= 10_000) {
+    const v = abs / 1_000
+    return `${sign}${v % 1 === 0 ? v.toLocaleString('vi-VN') : v.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} nghìn vnđ`
+  }
+  return `${sign}${Math.round(abs).toLocaleString('vi-VN')} vnđ`
+}
+
+/** Hiển thị đầy đủ số + vnđ (ô nhập liệu) */
+export function formatMoneyFull(n: number): string {
+  return `${Math.round(n).toLocaleString('vi-VN')} vnđ`
+}
+
+export function parseMoneyInput(raw: string): number {
+  const cleaned = raw.replace(/[^\d.-]/g, '')
+  const n = Number(cleaned)
+  return Number.isFinite(n) ? n : 0
 }
 
 export function formatNumber(n: number, digits = 2): string {

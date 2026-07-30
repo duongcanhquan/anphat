@@ -52,6 +52,7 @@ export const DEFAULT_SETTINGS: CompanySettings = {
   n8nWebhookUrl: '',
   n8nEnabled: false,
   logoText: 'AN PHÁT',
+  customUnits: [],
 }
 
 function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
@@ -139,7 +140,7 @@ export function watchStockEntries(cb: (items: StockEntry[]) => void): Unsubscrib
 export async function addStockEntry(entry: Omit<StockEntry, 'id'>, materialStock: number) {
   const batch = writeBatch(db)
   const entryRef = doc(collection(db, COL.stockEntries))
-  batch.set(entryRef, entry)
+  batch.set(entryRef, { type: 'import', ...entry })
   const matRef = doc(db, COL.materials, entry.materialId)
   const matSnap = await getDoc(matRef)
   if (matSnap.exists()) {
@@ -153,8 +154,17 @@ export async function addStockEntry(entry: Omit<StockEntry, 'id'>, materialStock
   return entryRef.id
 }
 
+export interface DeductStockOptions {
+  orderId?: string
+  orderCode?: string
+  createdBy?: string
+  createdByName?: string
+  note?: string
+}
+
 export async function deductStock(
-  items: { materialId: string; quantity: number }[],
+  items: { materialId: string; quantity: number; materialName?: string; unit?: string }[],
+  opts: DeductStockOptions = {},
 ): Promise<void> {
   const batch = writeBatch(db)
   for (const item of items) {
@@ -162,9 +172,26 @@ export async function deductStock(
     const snap = await getDoc(matRef)
     if (!snap.exists()) continue
     const mat = snap.data() as Material
+    const newStock = Math.max(0, mat.stock - item.quantity)
     batch.update(matRef, {
-      stock: Math.max(0, mat.stock - item.quantity),
+      stock: newStock,
       updatedAt: Date.now(),
+    })
+    const exportRef = doc(collection(db, COL.stockEntries))
+    batch.set(exportRef, {
+      materialId: item.materialId,
+      materialName: item.materialName || mat.name,
+      quantity: item.quantity,
+      unit: item.unit || mat.unit,
+      cost: 0,
+      contractor: '',
+      note: opts.note || (opts.orderCode ? `Xuất cho đơn ${opts.orderCode}` : 'Xuất kho'),
+      createdAt: Date.now(),
+      createdBy: opts.createdBy || '',
+      createdByName: opts.createdByName || '',
+      type: 'export',
+      orderId: opts.orderId || '',
+      orderCode: opts.orderCode || '',
     })
   }
   await batch.commit()

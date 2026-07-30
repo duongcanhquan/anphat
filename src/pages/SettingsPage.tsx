@@ -1,15 +1,7 @@
-import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import * as XLSX from 'xlsx'
-import {
-  Divide,
-  GripVertical,
-  Minus,
-  Plus,
-  Trash2,
-  Upload,
-  X,
-  Equal,
-} from 'lucide-react'
+import { Plus, Trash2, Upload } from 'lucide-react'
+import { ProductsTab } from '@/pages/ProductsTab'
 import {
   Badge,
   Bento,
@@ -27,52 +19,44 @@ import {
   bulkCreateCustomers,
   createConversion,
   createCustomer,
-  createFormula,
   createMaterial,
   createPayment,
   deleteConversion,
   deleteCustomer,
-  deleteFormula,
   deleteMaterial,
+  getSettings,
+  saveSettings,
+  DEFAULT_SETTINGS,
   updateConversion,
   updateCustomer,
-  updateFormula,
   updateMaterial,
   watchConversions,
   watchCustomers,
   watchFormulas,
   watchMaterials,
+  watchSettings,
   watchUsers,
 } from '@/lib/store'
 import type {
   AppUser,
+  CompanySettings,
   Conversion,
   Customer,
   Formula,
-  FormulaExprToken,
-  FormulaOp,
   Material,
   UserRole,
   WeightUnit,
 } from '@/types'
 import {
-  WEIGHT_UNITS,
+  allWeightUnits,
   canDeleteMaterial,
   canManageUsers,
   canWrite,
-  itemsFromExpression,
   visibleUsersFor,
 } from '@/types'
-import { formatMoney, formatNumber, uid } from '@/lib/utils'
+import { formatMoney, formatNumber } from '@/lib/utils'
 
-type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'cong-thuc'
-
-const OP_LABEL: Record<FormulaOp, string> = {
-  '+': '+',
-  '-': '−',
-  '*': '×',
-  '/': '÷',
-}
+type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'thanh-pham'
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
@@ -85,7 +69,10 @@ export function SettingsPage() {
   const [formulas, setFormulas] = useState<Formula[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
+  const [settings, setSettings] = useState<CompanySettings | null>(null)
   const [msg, setMsg] = useState('')
+
+  const unitOptions = allWeightUnits(settings?.customUnits || [])
 
   useEffect(() => {
     const subs = [
@@ -94,6 +81,7 @@ export function SettingsPage() {
       watchFormulas(setFormulas),
       watchCustomers(setCustomers),
       watchUsers(setUsers),
+      watchSettings(setSettings),
     ]
     return () => subs.forEach((u) => u())
   }, [])
@@ -103,7 +91,7 @@ export function SettingsPage() {
     { id: 'khach', label: 'Khách hàng' },
     { id: 'vat-lieu', label: 'Vật liệu' },
     { id: 'quy-doi', label: 'Quy đổi' },
-    { id: 'cong-thuc', label: 'Công thức' },
+    { id: 'thanh-pham', label: 'Thành phẩm' },
   ]
 
   return (
@@ -136,6 +124,8 @@ export function SettingsPage() {
       {tab === 'vat-lieu' && (
         <MaterialsTab
           materials={materials}
+          unitOptions={unitOptions}
+          customUnits={settings?.customUnits || []}
           writable={writable}
           canDelete={canDeleteMaterial(profile?.role)}
           onMsg={setMsg}
@@ -145,12 +135,13 @@ export function SettingsPage() {
         <ConversionsTab
           materials={materials}
           conversions={conversions}
+          unitOptions={unitOptions}
           writable={writable}
           onMsg={setMsg}
         />
       )}
-      {tab === 'cong-thuc' && (
-        <FormulasTab materials={materials} formulas={formulas} writable={writable} onMsg={setMsg} />
+      {tab === 'thanh-pham' && (
+        <ProductsTab materials={materials} formulas={formulas} unitOptions={unitOptions} writable={writable} onMsg={setMsg} />
       )}
     </div>
   )
@@ -158,11 +149,15 @@ export function SettingsPage() {
 
 function MaterialsTab({
   materials,
+  unitOptions,
+  customUnits: _customUnits,
   writable,
   canDelete,
   onMsg,
 }: {
   materials: Material[]
+  unitOptions: string[]
+  customUnits: string[]
   writable: boolean
   canDelete: boolean
   onMsg: (s: string) => void
@@ -171,14 +166,15 @@ function MaterialsTab({
   const [edit, setEdit] = useState<Material | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [unit, setUnit] = useState<WeightUnit>('TẤN')
+  const [unit, setUnit] = useState<WeightUnit>('Tấn')
   const [lowStockAlert, setLowStockAlert] = useState('0')
+  const [newUnit, setNewUnit] = useState('')
 
   const openNew = () => {
     setEdit(null)
     setName('')
     setDescription('')
-    setUnit('TẤN')
+    setUnit('Tấn')
     setLowStockAlert('0')
     setOpen(true)
   }
@@ -230,6 +226,35 @@ function MaterialsTab({
 
   return (
     <>
+      {writable && (
+        <Bento title="Đơn vị tính" subtitle="Tấn · Kg · Khối · Lít · Thùng · Bao (+ thêm tùy chỉnh)" className="mb-3">
+          <div className="flex flex-wrap gap-2">
+            {unitOptions.map((u) => (
+              <Badge key={u} tone="accent">{u}</Badge>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <Input label="Thêm đơn vị" value={newUnit} onChange={(e) => setNewUnit(e.target.value)} placeholder="vd: Pallet" />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={async () => {
+                const u = newUnit.trim()
+                if (!u) return
+                const s = await getSettings()
+                const list = [...new Set([...(s.customUnits || []), u])]
+                await saveSettings({ ...DEFAULT_SETTINGS, ...s, customUnits: list })
+                setNewUnit('')
+                onMsg(`Đã thêm đơn vị "${u}"`)
+              }}
+            >
+              Thêm đơn vị
+            </Button>
+          </div>
+        </Bento>
+      )}
       <div className="mb-3 flex justify-end">
         {writable && (
           <Button onClick={openNew}>
@@ -270,8 +295,8 @@ function MaterialsTab({
         <form className="space-y-3" onSubmit={save}>
           <Input label="Tên vật liệu" value={name} onChange={(e) => setName(e.target.value)} required />
           <Textarea label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <Select label="Đơn vị trọng lượng" value={unit} onChange={(e) => setUnit(e.target.value as WeightUnit)}>
-            {WEIGHT_UNITS.map((u) => (
+          <Select label="Đơn vị trọng lượng" value={unit} onChange={(e) => setUnit(e.target.value)}>
+            {unitOptions.map((u) => (
               <option key={u} value={u}>{u}</option>
             ))}
           </Select>
@@ -292,27 +317,29 @@ function MaterialsTab({
 function ConversionsTab({
   materials,
   conversions,
+  unitOptions,
   writable,
   onMsg,
 }: {
   materials: Material[]
   conversions: Conversion[]
+  unitOptions: string[]
   writable: boolean
   onMsg: (s: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [edit, setEdit] = useState<Conversion | null>(null)
   const [materialId, setMaterialId] = useState('')
-  const [fromUnit, setFromUnit] = useState<WeightUnit>('m3')
-  const [toUnit, setToUnit] = useState<WeightUnit>('KG')
+  const [fromUnit, setFromUnit] = useState<WeightUnit>('Khối')
+  const [toUnit, setToUnit] = useState<WeightUnit>('Kg')
   const [factor, setFactor] = useState('1600')
   const [note, setNote] = useState('')
 
   const openNew = () => {
     setEdit(null)
     setMaterialId(materials[0]?.id || '')
-    setFromUnit('m3')
-    setToUnit('KG')
+    setFromUnit('Khối')
+    setToUnit('Kg')
     setFactor('1600')
     setNote('')
     setOpen(true)
@@ -403,352 +430,16 @@ function ConversionsTab({
             ))}
           </Select>
           <div className="grid grid-cols-2 gap-2">
-            <Select label="Từ đơn vị" value={fromUnit} onChange={(e) => setFromUnit(e.target.value as WeightUnit)}>
-              {WEIGHT_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            <Select label="Từ đơn vị" value={fromUnit} onChange={(e) => setFromUnit(e.target.value)}>
+              {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </Select>
-            <Select label="Sang đơn vị" value={toUnit} onChange={(e) => setToUnit(e.target.value as WeightUnit)}>
-              {WEIGHT_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            <Select label="Sang đơn vị" value={toUnit} onChange={(e) => setToUnit(e.target.value)}>
+              {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </Select>
           </div>
           <Input label="Hệ số (1 từ = ? sang)" type="number" step="any" value={factor} onChange={(e) => setFactor(e.target.value)} required />
           <Textarea label="Ghi chú" value={note} onChange={(e) => setNote(e.target.value)} />
           <Button type="submit" className="w-full">Lưu</Button>
-        </form>
-      </Modal>
-    </>
-  )
-}
-
-function FormulasTab({
-  materials,
-  formulas,
-  writable,
-  onMsg,
-}: {
-  materials: Material[]
-  formulas: Formula[]
-  writable: boolean
-  onMsg: (s: string) => void
-}) {
-  const { profile } = useAuth()
-  const [open, setOpen] = useState(false)
-  const [edit, setEdit] = useState<Formula | null>(null)
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [unit, setUnit] = useState<WeightUnit>('TẤN')
-  const [unitPrice, setUnitPrice] = useState('0')
-  const [expression, setExpression] = useState<FormulaExprToken[]>([])
-  const [pickMaterialId, setPickMaterialId] = useState('')
-  const [pickQty, setPickQty] = useState('1')
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-
-  const openNew = () => {
-    setEdit(null)
-    setName('')
-    setDescription('')
-    setUnit('TẤN')
-    setUnitPrice('0')
-    setExpression([])
-    setPickMaterialId(materials.find((m) => m.active)?.id || '')
-    setPickQty('1')
-    setOpen(true)
-  }
-
-  const addMaterialToken = () => {
-    const mat = materials.find((m) => m.id === pickMaterialId)
-    if (!mat) return
-    setExpression((p) => [
-      ...p,
-      {
-        id: uid(),
-        kind: 'material',
-        materialId: mat.id,
-        materialName: mat.name,
-        quantityPerUnit: Number(pickQty) || 0,
-        unit: mat.unit,
-      },
-    ])
-  }
-
-  const addOp = (op: FormulaOp) => {
-    setExpression((p) => [...p, { id: uid(), kind: 'op', op }])
-  }
-
-  const addNumber = () => {
-    const v = Number(pickQty)
-    if (Number.isNaN(v)) return
-    setExpression((p) => [...p, { id: uid(), kind: 'number', value: v }])
-  }
-
-  const onDragStart = (idx: number) => setDragIndex(idx)
-  const onDragOver = (e: DragEvent, idx: number) => {
-    e.preventDefault()
-    if (dragIndex === null || dragIndex === idx) return
-    setExpression((prev) => {
-      const next = [...prev]
-      const [moved] = next.splice(dragIndex, 1)
-      next.splice(idx, 0, moved)
-      return next
-    })
-    setDragIndex(idx)
-  }
-  const onDragEnd = () => setDragIndex(null)
-
-  const save = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!writable) return
-    const items = itemsFromExpression(expression)
-    const data = {
-      name: name.trim(),
-      description: description.trim(),
-      unit,
-      unitPrice: Number(unitPrice) || 0,
-      items,
-      expression,
-      updatedAt: Date.now(),
-    }
-    if (edit) {
-      const changed =
-        JSON.stringify(edit.items) !== JSON.stringify(items) ||
-        JSON.stringify(edit.expression || []) !== JSON.stringify(expression)
-      const history = [...(edit.history || [])]
-      if (changed) {
-        history.push({
-          id: uid(),
-          label: `Trước khi sửa ${new Date().toLocaleString('vi-VN')}`,
-          items: edit.items,
-          createdAt: Date.now(),
-          createdBy: profile?.id || '',
-        })
-      }
-      await updateFormula(edit.id, { ...data, history })
-      onMsg('Đã cập nhật công thức.')
-    } else {
-      await createFormula({
-        ...data,
-        history: [],
-        active: true,
-        createdAt: Date.now(),
-      })
-      onMsg('Đã tạo công thức thành phẩm.')
-    }
-    setOpen(false)
-  }
-
-  const renderExprPreview = (tokens: FormulaExprToken[]) => {
-    if (!tokens.length) return <span className="text-muted">Chưa có biểu thức</span>
-    return (
-      <span className="flex flex-wrap items-center gap-1">
-        {tokens.map((t) => {
-          if (t.kind === 'op') {
-            return (
-              <span key={t.id} className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-ink text-sm font-bold text-surface">
-                {OP_LABEL[t.op]}
-              </span>
-            )
-          }
-          if (t.kind === 'number') {
-            return (
-              <span key={t.id} className="num rounded-lg bg-surface-2 px-2 py-1 text-sm font-semibold">
-                {formatNumber(t.value)}
-              </span>
-            )
-          }
-          return (
-            <span key={t.id} className="rounded-lg bg-accent-soft px-2 py-1 text-sm font-semibold text-accent">
-              {formatNumber(t.quantityPerUnit)} {t.unit} {t.materialName}
-            </span>
-          )
-        })}
-      </span>
-    )
-  }
-
-  return (
-    <>
-      <div className="mb-3 flex justify-end">
-        {writable && (
-          <Button onClick={openNew}>
-            <Plus size={16} /> Thêm công thức
-          </Button>
-        )}
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {formulas.map((f) => (
-          <Bento key={f.id} title={f.name} subtitle={f.description || `${formatMoney(f.unitPrice)} / ${f.unit}`}>
-            <div className="mb-2 text-sm">{renderExprPreview(f.expression || [])}</div>
-            {(!f.expression || f.expression.length === 0) && (
-              <div className="space-y-1">
-                {f.items.map((i) => (
-                  <div key={i.materialId + i.materialName} className="flex justify-between text-sm">
-                    <span>{i.materialName}</span>
-                    <span className="num font-semibold">
-                      {formatNumber(i.quantityPerUnit)} {i.unit}
-                    </span>
-                  </div>
-                ))}
-                {f.items.length === 0 && <p className="text-sm text-muted">Chưa gắn vật liệu (trừ kho thủ công).</p>}
-              </div>
-            )}
-            {f.history?.length > 0 && (
-              <p className="mt-2 text-xs text-muted">{f.history.length} bản tỷ lệ trong lý lịch</p>
-            )}
-            {writable && (
-              <div className="mt-3 flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEdit(f)
-                    setName(f.name)
-                    setDescription(f.description)
-                    setUnit(f.unit)
-                    setUnitPrice(String(f.unitPrice))
-                    if (f.expression?.length) {
-                      setExpression(f.expression.map((t) => ({ ...t })))
-                    } else {
-                      // Chuyển items cũ sang biểu thức cộng dồn
-                      const tokens: FormulaExprToken[] = []
-                      f.items.forEach((i, idx) => {
-                        if (idx > 0) tokens.push({ id: uid(), kind: 'op', op: '+' })
-                        tokens.push({
-                          id: uid(),
-                          kind: 'material',
-                          materialId: i.materialId,
-                          materialName: i.materialName,
-                          quantityPerUnit: i.quantityPerUnit,
-                          unit: i.unit,
-                        })
-                      })
-                      setExpression(tokens)
-                    }
-                    setPickMaterialId(materials.find((m) => m.active)?.id || '')
-                    setPickQty('1')
-                    setOpen(true)
-                  }}
-                >
-                  Sửa
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={async () => {
-                    if (!confirm(`Xoá công thức ${f.name}?`)) return
-                    await deleteFormula(f.id)
-                    onMsg('Đã xoá công thức.')
-                  }}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            )}
-          </Bento>
-        ))}
-      </div>
-      {formulas.length === 0 && <Empty text="Tạo công thức thành phẩm (vd: bê tông nhựa C13)." />}
-
-      <Modal open={open} onClose={() => setOpen(false)} title={edit ? 'Sửa công thức' : 'Thêm công thức'} wide>
-        <form className="space-y-3" onSubmit={save}>
-          <Input label="Tên thành phẩm" value={name} onChange={(e) => setName(e.target.value)} required />
-          <Textarea label="Mô tả / ghi chú công thức" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <div className="grid grid-cols-2 gap-2">
-            <Select label="Đơn vị thành phẩm" value={unit} onChange={(e) => setUnit(e.target.value as WeightUnit)}>
-              {WEIGHT_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-            </Select>
-            <Input label="Đơn giá mặc định" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
-          </div>
-
-          <div className="rounded-2xl border border-dashed border-line bg-surface/50 p-3">
-            <p className="mb-2 text-sm font-semibold">Biểu thức tỷ lệ (kéo thả · chọn toán tử)</p>
-            <p className="mb-3 text-xs text-muted">
-              Thành phẩm = tổ hợp vật liệu với cộng, trừ, nhân, chia. Kéo các ô để sắp xếp thứ tự.
-            </p>
-
-            <div className="mb-3 flex min-h-[52px] flex-wrap items-center gap-2 rounded-xl bg-card px-3 py-3">
-              {expression.length === 0 && <span className="text-sm text-muted">Thêm vật liệu và toán tử bên dưới…</span>}
-              {expression.map((t, idx) => (
-                <div
-                  key={t.id}
-                  draggable
-                  onDragStart={() => onDragStart(idx)}
-                  onDragOver={(e) => onDragOver(e, idx)}
-                  onDragEnd={onDragEnd}
-                  className={`inline-flex cursor-grab items-center gap-1 rounded-xl border px-2 py-1.5 active:cursor-grabbing ${
-                    t.kind === 'op'
-                      ? 'border-ink bg-ink text-surface'
-                      : t.kind === 'number'
-                        ? 'border-line bg-surface-2'
-                        : 'border-accent/30 bg-accent-soft text-accent'
-                  }`}
-                >
-                  <GripVertical size={14} className="opacity-50" />
-                  {t.kind === 'op' && <span className="font-bold">{OP_LABEL[t.op]}</span>}
-                  {t.kind === 'number' && <span className="num text-sm font-semibold">{formatNumber(t.value)}</span>}
-                  {t.kind === 'material' && (
-                    <span className="text-sm font-semibold">
-                      {formatNumber(t.quantityPerUnit)} {t.unit} {t.materialName}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    className="ml-1 rounded p-0.5 opacity-70 hover:opacity-100"
-                    onClick={() => setExpression((p) => p.filter((x) => x.id !== t.id))}
-                    aria-label="Xoá"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-              {expression.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-muted">
-                  <Equal size={16} /> thành phẩm
-                </span>
-              )}
-            </div>
-
-            <div className="mb-3 flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="secondary" onClick={() => addOp('+')}>
-                <Plus size={14} /> Cộng (+)
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => addOp('-')}>
-                <Minus size={14} /> Trừ (−)
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => addOp('*')}>
-                <span className="text-base font-bold leading-none">×</span> Nhân
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => addOp('/')}>
-                <Divide size={14} /> Chia (÷)
-              </Button>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-[1fr_100px_auto_auto]">
-              <Select label="Vật liệu" value={pickMaterialId} onChange={(e) => setPickMaterialId(e.target.value)}>
-                <option value="">— Chọn —</option>
-                {materials.filter((m) => m.active).map((m) => (
-                  <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>
-                ))}
-              </Select>
-              <Input
-                label="Số lượng"
-                type="number"
-                step="any"
-                value={pickQty}
-                onChange={(e) => setPickQty(e.target.value)}
-              />
-              <div className="flex items-end">
-                <Button type="button" variant="outline" onClick={addMaterialToken} className="w-full">
-                  + Vật liệu
-                </Button>
-              </div>
-              <div className="flex items-end">
-                <Button type="button" variant="ghost" onClick={addNumber} className="w-full">
-                  + Số
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <Button type="submit" className="w-full">Lưu công thức</Button>
         </form>
       </Modal>
     </>
@@ -987,7 +678,7 @@ function UsersTab({
     removeManagedUser,
   } = useAuth()
   const isSuper = currentRole === 'superadmin'
-  const visible = visibleUsersFor(currentRole, users)
+  const visible = visibleUsersFor(currentRole, users, currentId)
   const [open, setOpen] = useState(false)
   const [edit, setEdit] = useState<AppUser | null>(null)
   const [displayName, setDisplayName] = useState('')
@@ -1077,11 +768,7 @@ function UsersTab({
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">
-          Phân cấp: <strong>Super Admin → Admin → Viewer</strong>
-          {!isSuper && ' · Admin không thấy tài khoản Viewer'}
-        </p>
+      <div className="mb-3 flex justify-end">
         <Button onClick={openNew}>
           <Plus size={16} /> Thêm Admin
         </Button>

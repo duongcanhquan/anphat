@@ -1,6 +1,29 @@
 export type UserRole = 'superadmin' | 'admin' | 'viewer'
 
-export type WeightUnit = 'TẤN' | 'KG' | 'm3' | 'LÍT' | 'BAO'
+/** Đơn vị tính — mặc định + admin thêm tùy chỉnh */
+export type WeightUnit = string
+
+export const DEFAULT_WEIGHT_UNITS: readonly string[] = ['Tấn', 'Kg', 'Khối', 'Lít', 'Thùng', 'Bao']
+
+const LEGACY_UNIT_MAP: Record<string, string> = {
+  TẤN: 'Tấn',
+  TON: 'Tấn',
+  KG: 'Kg',
+  m3: 'Khối',
+  M3: 'Khối',
+  LÍT: 'Lít',
+  LIT: 'Lít',
+  BAO: 'Bao',
+}
+
+export function normalizeUnit(unit: string): string {
+  return LEGACY_UNIT_MAP[unit] || unit
+}
+
+export function allWeightUnits(customUnits: string[] = []): string[] {
+  const set = new Set([...DEFAULT_WEIGHT_UNITS, ...customUnits.map(normalizeUnit)])
+  return [...set]
+}
 
 export type OrderStatus =
   | 'dat_hang'
@@ -17,7 +40,8 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   chua_thanh_toan: 'Chưa thanh toán',
 }
 
-export const WEIGHT_UNITS: WeightUnit[] = ['TẤN', 'KG', 'm3', 'LÍT', 'BAO']
+/** @deprecated dùng allWeightUnits(settings.customUnits) */
+export const WEIGHT_UNITS: WeightUnit[] = [...DEFAULT_WEIGHT_UNITS]
 
 export interface AppUser {
   id: string
@@ -26,13 +50,11 @@ export interface AppUser {
   role: UserRole
   active: boolean
   createdAt: number
-  /** Admin/superadmin đã tạo tài khoản này (phân cấp) */
   createdBy?: string
 }
 
 export type FormulaOp = '+' | '-' | '*' | '/'
 
-/** Token trong biểu thức công thức (kéo thả / chọn toán tử) */
 export type FormulaExprToken =
   | {
       id: string
@@ -58,6 +80,8 @@ export interface Material {
   updatedAt: number
 }
 
+export type StockMovementType = 'import' | 'export'
+
 export interface StockEntry {
   id: string
   materialId: string
@@ -69,6 +93,12 @@ export interface StockEntry {
   note: string
   createdAt: number
   createdBy: string
+  createdByName?: string
+  /** import = nhập kho, export = xuất kho (đơn hàng) */
+  type?: StockMovementType
+  batchLabel?: string
+  orderId?: string
+  orderCode?: string
 }
 
 export interface Conversion {
@@ -97,6 +127,17 @@ export interface FormulaVersion {
   createdBy: string
 }
 
+/** Một công thức / tỷ lệ áp dụng cho thành phẩm */
+export interface ProductRecipe {
+  id: string
+  label: string
+  isDefault: boolean
+  expression: FormulaExprToken[]
+  items: FormulaItem[]
+  createdAt: number
+  createdBy?: string
+}
+
 export interface Formula {
   id: string
   name: string
@@ -104,8 +145,12 @@ export interface Formula {
   unit: WeightUnit
   unitPrice: number
   items: FormulaItem[]
-  /** Biểu thức tỷ lệ vật liệu với +, −, ×, ÷ */
   expression?: FormulaExprToken[]
+  /** Nhiều công thức cho cùng một thành phẩm */
+  recipes?: ProductRecipe[]
+  defaultRecipeId?: string
+  /** Vật liệu thành phần (đơn vị tương đương) */
+  materialIds?: string[]
   history: FormulaVersion[]
   active: boolean
   createdAt: number
@@ -142,6 +187,8 @@ export interface OrderLine {
   unit: WeightUnit
   unitPrice: number
   items: FormulaItem[]
+  recipeId?: string
+  recipeLabel?: string
   usedHistoryId?: string
   extras: OrderLineExtra[]
   lineTotal: number
@@ -184,6 +231,7 @@ export interface CompanySettings {
   n8nWebhookUrl: string
   n8nEnabled: boolean
   logoText: string
+  customUnits?: string[]
 }
 
 export interface DebtPayment {
@@ -221,19 +269,27 @@ export function canUnlockOrder(role: UserRole | undefined): boolean {
   return role === 'superadmin'
 }
 
-/** Superadmin & Admin được quản lý tài khoản */
 export function canManageUsers(role: UserRole | undefined): boolean {
   return role === 'admin' || role === 'superadmin'
 }
 
-/** Admin không thấy Viewer; Superadmin thấy tất cả */
-export function visibleUsersFor(role: UserRole | undefined, users: AppUser[]): AppUser[] {
+/** Admin không thấy Superadmin và Viewer */
+export function visibleUsersFor(
+  role: UserRole | undefined,
+  users: AppUser[],
+  currentUserId?: string,
+): AppUser[] {
   if (role === 'superadmin') return users
-  if (role === 'admin') return users.filter((u) => u.role !== 'viewer')
+  if (role === 'admin') {
+    return users.filter(
+      (u) =>
+        u.role === 'admin' &&
+        (u.id === currentUserId || u.createdBy === currentUserId),
+    )
+  }
   return []
 }
 
-/** Rút danh sách vật liệu từ biểu thức công thức (để trừ kho) */
 export function itemsFromExpression(expression: FormulaExprToken[] | undefined): FormulaItem[] {
   if (!expression?.length) return []
   const map = new Map<string, FormulaItem>()
@@ -252,4 +308,43 @@ export function itemsFromExpression(expression: FormulaExprToken[] | undefined):
     }
   }
   return [...map.values()]
+}
+
+/** Chuẩn hoá thành phẩm cũ → có danh sách recipes */
+export function getProductRecipes(f: Formula): ProductRecipe[] {
+  if (f.recipes?.length) return f.recipes
+  const items = f.items?.length ? f.items : itemsFromExpression(f.expression)
+  const expression = f.expression?.length
+    ? f.expression
+    : items.flatMap((i, idx) => {
+        const tokens: FormulaExprToken[] = []
+        if (idx > 0) tokens.push({ id: `op-${idx}`, kind: 'op', op: '+' })
+        tokens.push({
+          id: `mat-${i.materialId}`,
+          kind: 'material',
+          materialId: i.materialId,
+          materialName: i.materialName,
+          quantityPerUnit: i.quantityPerUnit,
+          unit: i.unit,
+        })
+        return tokens
+      })
+  const recipe: ProductRecipe = {
+    id: f.defaultRecipeId || 'default',
+    label: 'Mặc định',
+    isDefault: true,
+    expression,
+    items,
+    createdAt: f.createdAt,
+  }
+  return [recipe]
+}
+
+export function getDefaultRecipe(f: Formula): ProductRecipe {
+  const recipes = getProductRecipes(f)
+  return recipes.find((r) => r.id === f.defaultRecipeId) || recipes.find((r) => r.isDefault) || recipes[0]
+}
+
+export function recipeItems(recipe: ProductRecipe): FormulaItem[] {
+  return recipe.items?.length ? recipe.items : itemsFromExpression(recipe.expression)
 }
