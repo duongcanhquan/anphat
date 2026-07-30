@@ -5,7 +5,7 @@ import { Logo } from '@/components/Logo'
 import { Button, Input } from '@/components/ui'
 
 export function LoginPage() {
-  const { login, register, firebaseUser, loading } = useAuth()
+  const { login, register, firebaseUser, profile, loading, authError, logout } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
@@ -14,7 +14,8 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (!loading && firebaseUser) return <Navigate to="/" replace />
+  // Chỉ vào app khi đã có hồ sơ — tránh vòng lặp redirect nếu Firestore lỗi
+  if (!loading && firebaseUser && profile) return <Navigate to="/" replace />
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -92,8 +93,24 @@ export function LoginPage() {
             minLength={6}
           />
 
-          {error && (
-            <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{error}</div>
+          {(error || authError) && (
+            <div className="space-y-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
+              <p>{error || authError}</p>
+              {firebaseUser && !profile && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={async () => {
+                    await logout()
+                    setError('')
+                  }}
+                >
+                  Đăng xuất và thử lại
+                </Button>
+              )}
+            </div>
           )}
 
           <Button type="submit" className="w-full" size="lg" disabled={busy}>

@@ -21,6 +21,7 @@ interface AuthState {
   firebaseUser: User | null
   profile: AppUser | null
   loading: boolean
+  authError: string | null
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, name: string) => Promise<void>
   logout: () => Promise<void>
@@ -29,10 +30,20 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null)
 
+function friendlyAuthError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (msg.includes('permission-denied') || msg.includes('Missing or insufficient permissions')) {
+    return 'Firestore từ chối quyền. Hãy deploy file firestore.rules trên Firebase Console.'
+  }
+  if (msg.includes('auth/')) return msg
+  return msg || 'Lỗi xác thực / kết nối Firebase.'
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<AppUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const loadProfile = async (user: User) => {
     let p = await getUser(user.uid)
@@ -50,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await upsertUser(p)
     }
     setProfile(p)
+    setAuthError(null)
   }
 
   useEffect(() => {
@@ -61,9 +73,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           console.error(e)
           setProfile(null)
+          setAuthError(friendlyAuthError(e))
         }
       } else {
         setProfile(null)
+        setAuthError(null)
       }
       setLoading(false)
     })
@@ -103,7 +117,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ firebaseUser, profile, loading, login, register, logout, refreshProfile }}
+      value={{
+        firebaseUser,
+        profile,
+        loading,
+        authError,
+        login,
+        register,
+        logout,
+        refreshProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>
