@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="12" fill="#1a1510"/>
+  <path d="M8 44h48v6H8z" fill="#c45c26"/>
+  <path d="M12 38h40v6H12z" fill="#e07a3a"/>
+  <path d="M16 32h32v6H16z" fill="#f0a060"/>
+  <text x="32" y="26" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="14" font-weight="800" fill="#f5efe6">AP</text>
+</svg>
