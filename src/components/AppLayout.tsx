@@ -64,8 +64,8 @@ export function AppLayout() {
         </nav>
         <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
           <div>
-            <p className="font-semibold">{profile?.displayName}</p>
-            <p className="truncate text-xs text-surface/60">{profile?.email}</p>
+            <p className="break-words font-semibold">{profile?.displayName}</p>
+            <p className="break-all text-xs text-surface/60">{profile?.email}</p>
             <div className="mt-2">
               <Badge tone="accent">{roleLabel[profile?.role || 'viewer']}</Badge>
             </div>
@@ -116,8 +116,13 @@ export function AppLayout() {
                 ))}
               </nav>
               <div className="mt-auto space-y-3 pt-4">
-                <p className="truncate text-sm font-semibold">{profile?.displayName}</p>
-                <Badge tone="accent">{roleLabel[profile?.role || 'viewer']}</Badge>
+                <div>
+                  <p className="break-words text-sm font-semibold">{profile?.displayName}</p>
+                  <p className="break-all text-xs text-surface/60">{profile?.email}</p>
+                  <div className="mt-2">
+                    <Badge tone="accent">{roleLabel[profile?.role || 'viewer']}</Badge>
+                  </div>
+                </div>
                 <Button variant="outline" className="w-full border-white/20 bg-transparent text-surface" onClick={handleLogout}>
                   <LogOut size={16} /> Đăng xuất
                 </Button>
@@ -147,7 +152,7 @@ export function AppLayout() {
               }
             >
               <item.icon size={18} className="shrink-0" />
-              <span className="w-full truncate text-center">{item.label}</span>
+              <span className="w-full whitespace-normal text-center">{item.label}</span>
             </NavLink>
           ))}
         </nav>

@@ -190,7 +190,7 @@ export function FormulaBuilder({
           className="min-h-[120px] rounded-xl border border-line/60 bg-surface/50 p-3"
         >
           {expression.filter((t) => t.kind === 'material').length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">Thêm vật liệu từ bên trái</p>
+            <p className="py-6 text-center text-sm text-muted">Thêm vật liệu từ danh sách</p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {expression

@@ -101,12 +101,17 @@ export function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {recent.map((o) => (
-                <div key={o.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface/70 px-3 py-3">
+                <div
+                  key={o.id}
+                  className="flex flex-col gap-2 rounded-2xl bg-surface/70 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
                   <div className="min-w-0">
-                    <p className="truncate font-semibold">{o.code} · {o.customerName || 'Tính nhanh'}</p>
+                    <p className="break-words font-semibold">
+                      {o.code} · {o.customerName || 'Tính nhanh'}
+                    </p>
                     <p className="text-xs text-muted">{formatDateTime(o.orderAt)}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="flex items-center justify-between gap-2 sm:shrink-0 sm:flex-col sm:items-end sm:text-right">
                     <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
                     <Badge tone={statusTone(resolveOrderStatus(o))}>{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
                   </div>

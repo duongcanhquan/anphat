@@ -1219,8 +1219,15 @@ export function SalesPage() {
             <Bento title="Đang triển khai" subtitle={`${activeOrders.length} đơn`}>
               <div className="space-y-2">
                 {activeOrders.slice(0, 10).map((o) => (
-                  <button key={o.id} type="button" onClick={() => void openOrderDetail(o)} className="flex w-full items-center justify-between rounded-xl bg-surface/70 px-3 py-2 text-left">
-                    <span className="font-semibold">{o.code} · {o.customerName}</span>
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => void openOrderDetail(o)}
+                    className="flex w-full flex-col gap-1.5 rounded-xl bg-surface/70 px-3 py-2 text-left sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span className="min-w-0 break-words font-semibold">
+                      {o.code} · {o.customerName}
+                    </span>
                     <StatusBadge order={o} />
                   </button>
                 ))}
@@ -1233,19 +1240,29 @@ export function SalesPage() {
             ) : (
               <div className="space-y-2">
                 {orders.map((o) => (
-                  <button key={o.id} type="button" onClick={() => void openOrderDetail(o)} className="bento flex w-full items-center justify-between gap-3 p-4 text-left">
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => void openOrderDetail(o)}
+                    className="bento flex w-full flex-col gap-2 p-4 text-left sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                  >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-display font-bold">{o.code}</p>
-                        {o.locked && <Badge tone="warn"><Lock size={10} className="mr-1 inline" />Khoá</Badge>}
+                        {o.locked && (
+                          <Badge tone="warn">
+                            <Lock size={10} className="mr-1 inline" />
+                            Khoá
+                          </Badge>
+                        )}
                         <StatusBadge order={o} />
                       </div>
-                      <p className="truncate text-sm text-muted">
+                      <p className="break-words text-sm text-muted">
                         {o.customerName} · {formatDateTime(o.orderAt)}
                         {o.assignedToName && ` · PT: ${o.assignedToName}`}
                       </p>
                     </div>
-                    <p className="num shrink-0 text-lg font-extrabold">{formatMoney(o.totalAmount)}</p>
+                    <p className="num text-lg font-extrabold sm:shrink-0">{formatMoney(o.totalAmount)}</p>
                   </button>
                 ))}
               </div>

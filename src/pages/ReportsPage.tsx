@@ -154,12 +154,14 @@ export function ReportsPage() {
                 <div className="max-h-[28rem] space-y-2 overflow-y-auto">
                   {activeOrders.map((o) => (
                     <div key={o.id} className="rounded-xl bg-surface/70 px-3 py-2.5">
-                      <div className="flex justify-between gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
                         <div className="min-w-0">
-                          <p className="truncate font-semibold leading-tight">{o.customerName || '—'}</p>
-                          <p className="mt-0.5 text-[11px] text-muted">{o.code} · {formatDateTime(o.orderAt)}</p>
+                          <p className="break-words font-semibold leading-tight">{o.customerName || '—'}</p>
+                          <p className="mt-0.5 text-[11px] text-muted">
+                            {o.code} · {formatDateTime(o.orderAt)}
+                          </p>
                         </div>
-                        <div className="shrink-0 text-right">
+                        <div className="flex items-center justify-between gap-2 sm:shrink-0 sm:flex-col sm:items-end sm:text-right">
                           <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
                           <Badge tone="accent">{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
                         </div>
@@ -169,8 +171,8 @@ export function ReportsPage() {
                           <p className="text-xs text-muted">Không có dòng sản phẩm.</p>
                         ) : (
                           (o.lines || []).map((l) => (
-                            <div key={l.id} className="flex justify-between gap-2 text-sm">
-                              <span className="min-w-0 truncate">{l.formulaName || 'Sản phẩm'}</span>
+                            <div key={l.id} className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-sm">
+                              <span className="min-w-0 break-words">{l.formulaName || 'Sản phẩm'}</span>
                               <span className="num shrink-0 font-semibold text-muted">
                                 × {formatNumber(l.quantity)} {l.unit}
                               </span>
@@ -230,7 +232,7 @@ export function ReportsPage() {
           <Bento
             title={cust ? cust.name : 'Chi tiết khách'}
             className="lg:col-span-2"
-            subtitle={cust ? `MST: ${cust.taxCode || '—'} · ${cust.address || '—'}` : 'Chọn một khách bên trái'}
+            subtitle={cust ? `MST: ${cust.taxCode || '—'} · ${cust.address || '—'}` : 'Chọn một khách ở danh sách'}
           >
             {!cust ? (
               <Empty text="Chọn khách hàng để xem mua gì, công nợ…" />
