@@ -43,11 +43,11 @@ export const ORDER_STATUS_CORE: OrderStatusCore[] = ['draft', 'dang_lam', 'hoan_
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   draft: 'Draft (nháp)',
-  dang_lam: 'Đang làm',
+  dang_lam: 'Đang hoạt động',
   hoan_thien: 'Hoàn thiện',
   huy: 'Huỷ',
   dat_hang: 'Draft (nháp)',
-  dang_san_xuat: 'Đang làm',
+  dang_san_xuat: 'Đang hoạt động',
   da_giao: 'Hoàn thiện',
   chua_thanh_toan: 'Draft (nháp)',
 }
@@ -59,11 +59,19 @@ export function normalizeOrderStatus(s: OrderStatus | undefined): OrderStatusCor
   return 'draft'
 }
 
-/** Suy ra trạng thái từ số đã thanh toán */
+/**
+ * Trạng thái theo tiền đã thanh toán:
+ * - Chưa có tiền → Draft
+ * - Đã có cọc / thanh toán một phần → Đang hoạt động
+ * - Đủ tiền (≥ tổng hợp đồng) → Hoàn thiện
+ * Có tiền thì không bao giờ là Draft.
+ */
 export function statusFromPayment(totalAmount: number, paidTotal: number): OrderStatusCore {
-  if (paidTotal <= 0) return 'draft'
-  if (paidTotal + 0.5 >= totalAmount && totalAmount > 0) return 'hoan_thien'
-  return 'dang_lam'
+  if (paidTotal > 0) {
+    if (totalAmount > 0 && paidTotal + 0.5 >= totalAmount) return 'hoan_thien'
+    return 'dang_lam'
+  }
+  return 'draft'
 }
 
 /** @deprecated dùng allWeightUnits(settings.customUnits) */

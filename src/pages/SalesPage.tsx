@@ -92,8 +92,21 @@ function emptyLine(f?: Formula, recipe?: ProductRecipe): OrderLine {
   }
 }
 
-function StatusBadge({ status }: { status: OrderStatus }) {
-  const core = normalizeOrderStatus(status)
+function StatusBadge({
+  status,
+  paidTotal,
+  totalAmount,
+}: {
+  status: OrderStatus
+  paidTotal?: number
+  totalAmount?: number
+}) {
+  const core =
+    normalizeOrderStatus(status) === 'huy'
+      ? ('huy' as OrderStatusCore)
+      : typeof paidTotal === 'number' && typeof totalAmount === 'number'
+        ? statusFromPayment(totalAmount, paidTotal)
+        : normalizeOrderStatus(status)
   const c = ORDER_STATUS_COLORS[core]
   return (
     <span className={cn('inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold', c.bg, c.text)}>
@@ -287,8 +300,7 @@ export function SalesPage() {
   const [payAt, setPayAt] = useState(() => datetimeLocalValue(Date.now()))
   const [contractAmount, setContractAmount] = useState(0)
   const [note, setNote] = useState('')
-  const [forceDraft, setForceDraft] = useState(false)
-  const [orderStatusOverride, setOrderStatusOverride] = useState<OrderStatusCore | null>(null)
+  const [orderStatusOverride, setOrderStatusOverride] = useState<'huy' | null>(null)
   const [assignedTo, setAssignedTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -329,15 +341,29 @@ export function SalesPage() {
   }, [customers, customerSearch])
 
   const totalAmount = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines])
+  /** Tiền đang nhập chưa bấm ghi nhận — vẫn tính vào trạng thái khi lưu */
+  const pendingPay = payAmount > 0 ? payAmount : 0
   const paidAmount = useMemo(() => payments.reduce((s, p) => s + (p.amount || 0), 0), [payments])
-  const debt = Math.max(0, totalAmount - paidAmount)
-  const autoStatus = statusFromPayment(totalAmount, paidAmount)
+  const paidWithPending = paidAmount + pendingPay
+  const debt = Math.max(0, totalAmount - paidWithPending)
+  const autoStatus = statusFromPayment(totalAmount, paidWithPending)
   const orderStatus: OrderStatusCore =
-    orderStatusOverride === 'huy'
-      ? 'huy'
-      : forceDraft || orderStatusOverride === 'draft'
-        ? 'draft'
-        : autoStatus
+    orderStatusOverride === 'huy' ? 'huy' : autoStatus
+
+  const buildPaymentsForSave = (): OrderPayment[] => {
+    const list = [...payments]
+    if (payAmount > 0) {
+      list.unshift({
+        id: uid(),
+        amount: payAmount,
+        note: payNote.trim() || (payments.length === 0 ? 'Cọc' : 'Thanh toán'),
+        paidAt: parseDatetimeLocal(payAt),
+        createdBy: profile?.id || '',
+        createdByName: profile?.displayName,
+      })
+    }
+    return list.sort((a, b) => b.paidAt - a.paidAt)
+  }
 
   const addPaymentRow = () => {
     if (!writable || payAmount <= 0) return
@@ -345,7 +371,7 @@ export function SalesPage() {
       {
         id: uid(),
         amount: payAmount,
-        note: payNote.trim(),
+        note: payNote.trim() || (prev.length === 0 ? 'Cọc' : 'Thanh toán'),
         paidAt: parseDatetimeLocal(payAt),
         createdBy: profile?.id || '',
         createdByName: profile?.displayName,
@@ -355,7 +381,6 @@ export function SalesPage() {
     setPayAmount(0)
     setPayNote('')
     setPayAt(datetimeLocalValue(Date.now()))
-    setForceDraft(false)
     setOrderStatusOverride(null)
   }
 
@@ -432,7 +457,6 @@ export function SalesPage() {
     setContractAmount(0)
     setNote('')
     setCustomerId('')
-    setForceDraft(false)
     setOrderStatusOverride(null)
     setAssignedTo(profile?.id || '')
     setEditingOrder(null)
@@ -447,11 +471,9 @@ export function SalesPage() {
     setLines(order.lines.map((l) => ({ ...l, extras: l.extras.map((e) => ({ ...e })) })))
     setCustomerId(order.customerId || '')
     setPayments(orderPaymentsList(order).map((p) => ({ ...p })))
-    setContractAmount(order.contractAmount || 0)
+    setContractAmount(order.contractAmount || order.totalAmount || 0)
     setNote(order.note || '')
-    const core = normalizeOrderStatus(order.status)
-    setForceDraft(core === 'draft')
-    setOrderStatusOverride(core === 'huy' ? 'huy' : null)
+    setOrderStatusOverride(normalizeOrderStatus(order.status) === 'huy' ? 'huy' : null)
     setAssignedTo(order.assignedTo || order.createdBy || profile?.id || '')
     setTab('tao-don')
     setDetailOrder(null)
@@ -493,15 +515,28 @@ export function SalesPage() {
 
       const assignee = managers.find((u) => u.id === assignedTo) || profile
       const orderCode = editingOrder?.code || generateOrderCode()
-      const saveAsDraft = asDraft === true || (asDraft !== false && paidAmount <= 0 && forceDraft)
-      const status: OrderStatusCore =
-        saveAsDraft && paidAmount <= 0
-          ? 'draft'
-          : orderStatusOverride === 'huy'
-            ? 'huy'
-            : statusFromPayment(totalAmount, paidAmount)
+      const finalPayments = buildPaymentsForSave()
+      const finalPaid = finalPayments.reduce((s, p) => s + (p.amount || 0), 0)
+      const finalDebt = Math.max(0, totalAmount - finalPaid)
+
+      // Chỉ Draft khi chưa có tiền. Có cọc → Đang hoạt động. Đủ tiền → Hoàn thiện.
+      // Nút "Lưu Draft" chỉ hợp lệ khi chưa thanh toán.
+      if (asDraft === true && finalPaid > 0) {
+        setMessage('Đã có thanh toán/cọc — không thể lưu Draft. Trạng thái sẽ là Đang hoạt động.')
+      }
+
+      let status: OrderStatusCore
+      if (orderStatusOverride === 'huy') {
+        status = 'huy'
+      } else if (asDraft === true && finalPaid <= 0) {
+        status = 'draft'
+      } else {
+        status = statusFromPayment(totalAmount, finalPaid)
+      }
+
       const shouldDeduct =
         status !== 'draft' && status !== 'huy' && !(editingOrder?.stockDeducted)
+      const finalContract = contractAmount > 0 ? contractAmount : totalAmount
 
       const orderPayload: Omit<Order, 'id'> = {
         code: orderCode,
@@ -509,10 +544,10 @@ export function SalesPage() {
         customerName: cust.name,
         lines: lines.map((l) => ({ ...l, status })),
         deposit: 0,
-        paidAmount,
-        payments: [...payments].sort((a, b) => b.paidAt - a.paidAt),
-        contractAmount,
-        debt,
+        paidAmount: finalPaid,
+        payments: finalPayments,
+        contractAmount: finalContract,
+        debt: finalDebt,
         totalAmount,
         status,
         locked: editingOrder?.locked || false,
@@ -546,7 +581,7 @@ export function SalesPage() {
         }
         await updateCustomer(cust.id, {
           totalPurchased: Math.max(0, (cust.totalPurchased || 0) - editingOrder.totalAmount + totalAmount),
-          totalDebt: Math.max(0, (cust.totalDebt || 0) - oldDebt + debt),
+          totalDebt: Math.max(0, (cust.totalDebt || 0) - oldDebt + finalDebt),
         })
         await createAuditLog({
           entityType: 'order',
@@ -555,12 +590,12 @@ export function SalesPage() {
           action: 'update',
           summary: `Sửa đơn ${orderCode} → ${ORDER_STATUS_LABELS[status]}`,
           before: JSON.stringify({ total: editingOrder.totalAmount, paid: oldPaid, status: editingOrder.status }),
-          after: JSON.stringify({ total: totalAmount, paid: paidAmount, status }),
+          after: JSON.stringify({ total: totalAmount, paid: finalPaid, status }),
           userId: profile.id,
           userName: profile.displayName,
           createdAt: Date.now(),
         })
-        setMessage(`Đã cập nhật đơn ${orderCode}`)
+        setMessage(`Đã cập nhật đơn ${orderCode} · ${ORDER_STATUS_LABELS[status]}`)
         setDetailOrder({ ...orderPayload, id: editingOrder.id })
       } else {
         const id = await createOrder(orderPayload)
@@ -578,7 +613,7 @@ export function SalesPage() {
         }
         await updateCustomer(cust.id, {
           totalPurchased: (cust.totalPurchased || 0) + totalAmount,
-          totalDebt: (cust.totalDebt || 0) + debt,
+          totalDebt: (cust.totalDebt || 0) + finalDebt,
         })
         await createAuditLog({
           entityType: 'order',
@@ -590,7 +625,7 @@ export function SalesPage() {
           userName: profile.displayName,
           createdAt: Date.now(),
         })
-        setMessage(`Đã tạo đơn ${orderCode}`)
+        setMessage(`Đã tạo đơn ${orderCode} · ${ORDER_STATUS_LABELS[status]}`)
         setDetailOrder({ ...orderPayload, id })
       }
 
@@ -694,7 +729,7 @@ export function SalesPage() {
         {
           id: uid(),
           amount: detailPayAmount,
-          note: detailPayNote.trim(),
+          note: detailPayNote.trim() || (orderPaymentsList(detailOrder).length === 0 ? 'Cọc' : 'Thanh toán'),
           paidAt: parseDatetimeLocal(detailPayAt),
           createdBy: profile.id,
           createdByName: profile.displayName,
@@ -768,6 +803,54 @@ export function SalesPage() {
     } finally {
       setDetailPayBusy(false)
     }
+  }
+
+  const openOrderDetail = async (order: Order) => {
+    const paid = orderPaidTotal(order)
+    const core = normalizeOrderStatus(order.status)
+    const expected = statusFromPayment(order.totalAmount, paid)
+    // Sửa đơn cũ: đã có cọc mà vẫn Draft → chuyển Đang hoạt động
+    if (
+      writable &&
+      profile &&
+      core === 'draft' &&
+      paid > 0 &&
+      expected !== 'draft'
+    ) {
+      const patch: Partial<Order> = { status: expected }
+      if (!order.stockDeducted) {
+        const deductItems = order.lines.flatMap((line) =>
+          line.items.map((item) => {
+            const mat = materials.find((m) => m.id === item.materialId)
+            const qtyConverted = item.quantityPerUnit * line.quantity
+            const qtyStock = mat
+              ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
+              : qtyConverted
+            return {
+              materialId: item.materialId,
+              materialName: item.materialName,
+              unit: mat?.unit || item.unit,
+              quantity: qtyStock,
+            }
+          }),
+        )
+        if (deductItems.length > 0) {
+          await deductStock(deductItems, {
+            orderId: order.id,
+            orderCode: order.code,
+            createdBy: profile.id,
+            createdByName: profile.displayName,
+            note: `Xuất kho đơn ${order.code}`,
+          })
+        }
+        patch.stockDeducted = true
+      }
+      await updateOrder(order.id, patch)
+      setDetailOrder({ ...order, ...patch })
+      setMessage(`Đã cập nhật ${order.code}: có thanh toán → ${ORDER_STATUS_LABELS[expected]}`)
+      return
+    }
+    setDetailOrder(order)
   }
 
   const activeOrders = orders.filter((o) => {
@@ -978,21 +1061,26 @@ export function SalesPage() {
             <Bento title="Thanh toán & trạng thái">
               <div className="grid gap-3">
                 <div className="rounded-xl bg-surface/80 p-3">
-                  <p className="text-xs uppercase tracking-wider text-muted">Tổng tiền hàng</p>
+                  <p className="text-xs uppercase tracking-wider text-muted">Tổng tiền hàng / hợp đồng</p>
                   <p className="num text-2xl font-extrabold text-accent">{formatMoney(totalAmount)}</p>
                 </div>
                 <div className="rounded-xl bg-ink px-3 py-3 text-surface">
-                  <p className="text-xs uppercase tracking-wider opacity-70">Đã thanh toán</p>
-                  <p className="num text-2xl font-extrabold">{formatMoney(paidAmount)}</p>
+                  <p className="text-xs uppercase tracking-wider opacity-70">Đã thanh toán (cọc + các đợt)</p>
+                  <p className="num text-2xl font-extrabold">{formatMoney(paidWithPending)}</p>
                   <p className="mt-1 text-sm opacity-80">
                     Công nợ: <strong className="num">{formatMoney(debt)}</strong>
                   </p>
+                  {pendingPay > 0 && (
+                    <p className="mt-1 text-xs opacity-70">
+                      Đang nhập +{formatMoney(pendingPay)} — sẽ tự ghi nhận khi lưu đơn
+                    </p>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-line bg-white p-3">
                   <p className="mb-2 text-sm font-bold">Lịch sử thanh toán</p>
-                  {payments.length === 0 ? (
-                    <p className="mb-3 text-xs text-muted">Chưa có đợt thanh toán. Thêm cọc / thanh toán bên dưới.</p>
+                  {payments.length === 0 && pendingPay <= 0 ? (
+                    <p className="mb-3 text-xs text-muted">Chưa có tiền → đơn là Draft. Nhập cọc bên dưới để chuyển Đang hoạt động.</p>
                   ) : (
                     <div className="mb-3 max-h-48 space-y-2 overflow-y-auto">
                       {payments.map((p) => (
@@ -1009,12 +1097,18 @@ export function SalesPage() {
                           )}
                         </div>
                       ))}
+                      {pendingPay > 0 && (
+                        <div className="rounded-xl border border-dashed border-ok/40 bg-emerald-50 px-3 py-2">
+                          <p className="num text-base font-extrabold text-ok">{formatMoney(pendingPay)}</p>
+                          <p className="text-xs text-muted">Chưa lưu · sẽ ghi khi Chốt / Lưu đơn</p>
+                        </div>
+                      )}
                     </div>
                   )}
                   {writable && (
                     <div className="space-y-2 border-t border-line pt-3">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Thêm đợt thanh toán</p>
-                      <MoneyInput label="Số tiền" value={payAmount} onChange={setPayAmount} />
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Nhập cọc / đợt thanh toán</p>
+                      <MoneyInput label="Số tiền thanh toán" value={payAmount} onChange={setPayAmount} />
                       <Input
                         label="Thời gian thanh toán"
                         type="datetime-local"
@@ -1023,33 +1117,31 @@ export function SalesPage() {
                       />
                       <Input label="Ghi chú đợt" value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Cọc, đợt 1…" />
                       <Button variant="secondary" className="w-full" disabled={payAmount <= 0} onClick={addPaymentRow}>
-                        <Plus size={14} /> Ghi nhận đợt thanh toán
+                        <Plus size={14} /> Thêm vào lịch sử thanh toán
                       </Button>
                     </div>
                   )}
                 </div>
 
-                <MoneyInput label="Tiền hợp đồng (ghi nhận)" value={contractAmount} disabled={!writable} onChange={setContractAmount} />
+                <MoneyInput
+                  label="Giá trị hợp đồng (tuỳ chọn)"
+                  value={contractAmount}
+                  disabled={!writable}
+                  onChange={setContractAmount}
+                  hint={contractAmount <= 0 ? `Để trống sẽ lấy tổng tiền hàng: ${formatMoney(totalAmount)}` : undefined}
+                />
 
                 <div>
-                  <p className="mb-2 text-xs font-medium text-muted">Trạng thái (tự động theo thanh toán)</p>
+                  <p className="mb-2 text-xs font-medium text-muted">Trạng thái (theo tiền đã thanh toán)</p>
                   <div className="flex flex-wrap gap-2">
                     {ORDER_STATUS_CORE.map((s) => (
                       <button
                         key={s}
                         type="button"
-                        disabled={!writable || (s !== 'draft' && s !== 'huy' && s !== autoStatus)}
+                        disabled={!writable || (s === 'draft' && paidWithPending > 0) || (s !== 'huy' && s !== autoStatus && !(s === 'draft' && paidWithPending <= 0))}
                         onClick={() => {
-                          if (s === 'draft') {
-                            setForceDraft(true)
-                            setOrderStatusOverride(null)
-                          } else if (s === 'huy') {
-                            setOrderStatusOverride('huy')
-                            setForceDraft(false)
-                          } else {
-                            setForceDraft(false)
-                            setOrderStatusOverride(null)
-                          }
+                          if (s === 'huy') setOrderStatusOverride('huy')
+                          else setOrderStatusOverride(null)
                         }}
                         className={cn(
                           'rounded-lg px-3 py-1.5 text-sm font-semibold',
@@ -1063,7 +1155,7 @@ export function SalesPage() {
                     ))}
                   </div>
                   <p className="mt-2 text-xs text-muted">
-                    Không cọc → Draft · Có cọc → Đang làm · Đủ tiền → Hoàn thiện. Đơn Draft chưa trừ kho.
+                    Chưa có tiền → Draft · Có cọc → Đang hoạt động · Đủ tiền → Hoàn thiện. Draft chưa trừ kho.
                   </p>
                 </div>
                 <Textarea label="Ghi chú" value={note} disabled={!writable} onChange={(e) => setNote(e.target.value)} />
@@ -1073,19 +1165,24 @@ export function SalesPage() {
             {writable && (
               <div className="grid gap-2">
                 <Button size="lg" disabled={busy} onClick={() => confirmOrder(false)}>
-                  {busy ? 'Đang lưu…' : editingOrder ? 'Lưu đơn hàng' : 'Chốt đơn hàng'}
+                  {busy
+                    ? 'Đang lưu…'
+                    : editingOrder
+                      ? `Lưu đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
+                      : paidWithPending > 0
+                        ? `Chốt đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
+                        : 'Chốt đơn hàng'}
                 </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    setForceDraft(true)
-                    void confirmOrder(true)
-                  }}
-                >
-                  Lưu Draft (nháp)
-                </Button>
+                {paidWithPending <= 0 && (
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void confirmOrder(true)}
+                  >
+                    Lưu Draft (nháp — chưa có tiền)
+                  </Button>
+                )}
               </div>
             )}
             {message && <p className="text-sm font-medium text-info">{message}</p>}
@@ -1099,9 +1196,9 @@ export function SalesPage() {
             <Bento title="Đang triển khai" subtitle={`${activeOrders.length} đơn`}>
               <div className="space-y-2">
                 {activeOrders.slice(0, 10).map((o) => (
-                  <button key={o.id} type="button" onClick={() => setDetailOrder(o)} className="flex w-full items-center justify-between rounded-xl bg-surface/70 px-3 py-2 text-left">
+                  <button key={o.id} type="button" onClick={() => void openOrderDetail(o)} className="flex w-full items-center justify-between rounded-xl bg-surface/70 px-3 py-2 text-left">
                     <span className="font-semibold">{o.code} · {o.customerName}</span>
-                    <StatusBadge status={o.status} />
+                    <StatusBadge status={o.status} paidTotal={orderPaidTotal(o)} totalAmount={o.totalAmount} />
                   </button>
                 ))}
               </div>
@@ -1113,12 +1210,12 @@ export function SalesPage() {
             ) : (
               <div className="space-y-2">
                 {orders.map((o) => (
-                  <button key={o.id} type="button" onClick={() => setDetailOrder(o)} className="bento flex w-full items-center justify-between gap-3 p-4 text-left">
+                  <button key={o.id} type="button" onClick={() => void openOrderDetail(o)} className="bento flex w-full items-center justify-between gap-3 p-4 text-left">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-display font-bold">{o.code}</p>
                         {o.locked && <Badge tone="warn"><Lock size={10} className="mr-1 inline" />Khoá</Badge>}
-                        <StatusBadge status={o.status} />
+                        <StatusBadge status={o.status} paidTotal={orderPaidTotal(o)} totalAmount={o.totalAmount} />
                       </div>
                       <p className="truncate text-sm text-muted">
                         {o.customerName} · {formatDateTime(o.orderAt)}
@@ -1182,7 +1279,11 @@ export function SalesPage() {
         {detailOrder && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <StatusBadge status={detailOrder.status} />
+              <StatusBadge
+                status={detailOrder.status}
+                paidTotal={orderPaidTotal(detailOrder)}
+                totalAmount={detailOrder.totalAmount}
+              />
               {detailOrder.locked && <Badge tone="warn">Đã khoá</Badge>}
               {normalizeOrderStatus(detailOrder.status) === 'draft' && (
                 <Badge tone="info">Chưa trừ kho</Badge>
