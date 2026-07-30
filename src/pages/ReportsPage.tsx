@@ -56,8 +56,7 @@ export function ReportsPage() {
     return s !== 'huy' && s !== 'draft'
   })
   const sales = activeOrders.reduce((s, o) => s + o.totalAmount, 0)
-  const deposit = activeOrders.reduce((s, o) => s + orderPaidTotal(o), 0)
-  const paid = deposit
+  const paidTotal = activeOrders.reduce((s, o) => s + orderPaidTotal(o), 0)
   const debtPeriod = activeOrders.reduce((s, o) => s + (o.debt || 0), 0)
   const totalDebt = customers.reduce((s, c) => s + (c.totalDebt || 0), 0)
 
@@ -127,15 +126,12 @@ export function ReportsPage() {
             </div>
           </Bento>
 
-          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
             <Bento className="bg-ink text-surface">
               <StatBig label="Doanh số" value={formatMoney(sales)} tone="accent" />
             </Bento>
             <Bento>
-              <StatBig label="Đã thanh toán" value={formatMoney(deposit)} tone="ok" />
-            </Bento>
-            <Bento>
-              <StatBig label="Đã thu" value={formatMoney(paid)} />
+              <StatBig label="Đã thanh toán" value={formatMoney(paidTotal)} tone="ok" />
             </Bento>
             <Bento>
               <StatBig label="Công nợ kỳ" value={formatMoney(debtPeriod)} tone="warn" />
@@ -155,10 +151,10 @@ export function ReportsPage() {
                   {activeOrders.map((o) => (
                     <div key={o.id} className="flex justify-between gap-2 rounded-xl bg-surface/70 px-3 py-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{o.code} · {o.customerName || '—'}</p>
-                        <p className="text-xs text-muted">{formatDateTime(o.orderAt)}</p>
+                        <p className="truncate font-semibold leading-tight">{o.customerName || '—'}</p>
+                        <p className="mt-0.5 text-[11px] text-muted">{o.code} · {formatDateTime(o.orderAt)}</p>
                       </div>
-                      <div className="text-right">
+                      <div className="shrink-0 text-right">
                         <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
                         <Badge tone="accent">{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
                       </div>
