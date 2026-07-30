@@ -43,11 +43,11 @@ export const ORDER_STATUS_CORE: OrderStatusCore[] = ['draft', 'dang_lam', 'hoan_
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   draft: 'Draft (nháp)',
-  dang_lam: 'Đang hoạt động',
+  dang_lam: 'Đang thực hiện',
   hoan_thien: 'Hoàn thiện',
   huy: 'Huỷ',
   dat_hang: 'Draft (nháp)',
-  dang_san_xuat: 'Đang hoạt động',
+  dang_san_xuat: 'Đang thực hiện',
   da_giao: 'Hoàn thiện',
   chua_thanh_toan: 'Draft (nháp)',
 }
@@ -62,16 +62,26 @@ export function normalizeOrderStatus(s: OrderStatus | undefined): OrderStatusCor
 /**
  * Trạng thái theo tiền đã thanh toán:
  * - Chưa có tiền → Draft
- * - Đã có cọc / thanh toán một phần → Đang hoạt động
+ * - Đã có cọc / thanh toán một phần → Đang thực hiện
  * - Đủ tiền (≥ tổng hợp đồng) → Hoàn thiện
  * Có tiền thì không bao giờ là Draft.
  */
 export function statusFromPayment(totalAmount: number, paidTotal: number): OrderStatusCore {
-  if (paidTotal > 0) {
-    if (totalAmount > 0 && paidTotal + 0.5 >= totalAmount) return 'hoan_thien'
+  const paid = Number(paidTotal) || 0
+  const total = Number(totalAmount) || 0
+  if (paid > 0) {
+    if (total > 0 && paid + 0.5 >= total) return 'hoan_thien'
     return 'dang_lam'
   }
   return 'draft'
+}
+
+/** Trạng thái hiển thị / lưu: luôn theo tiền (trừ khi Huỷ) */
+export function resolveOrderStatus(
+  o: Pick<Order, 'status' | 'totalAmount' | 'deposit' | 'paidAmount' | 'payments'>,
+): OrderStatusCore {
+  if (normalizeOrderStatus(o.status) === 'huy') return 'huy'
+  return statusFromPayment(o.totalAmount || 0, orderPaidTotal(o))
 }
 
 /** @deprecated dùng allWeightUnits(settings.customUnits) */
@@ -351,15 +361,20 @@ export function extraMoneyValue(extra: OrderLineExtra, base: number): number {
 export function orderPaidTotal(
   o: Pick<Order, 'deposit' | 'paidAmount' | 'payments'>,
 ): number {
-  if (o.payments?.length) {
-    return o.payments.reduce((s, p) => s + (p.amount || 0), 0)
-  }
-  return (o.paidAmount || 0) + (o.deposit || 0)
+  const fromPayments = (o.payments || []).reduce((s, p) => s + (Number(p?.amount) || 0), 0)
+  const fromLegacy = (Number(o.paidAmount) || 0) + (Number(o.deposit) || 0)
+  // Ưu tiên lịch sử thanh toán; nếu rỗng thì lấy paidAmount/deposit cũ
+  if ((o.payments?.length || 0) > 0) return fromPayments
+  return fromLegacy
 }
 
 export function orderPaymentsList(o: Pick<Order, 'payments' | 'paidAmount' | 'deposit' | 'createdAt' | 'createdBy' | 'createdByName'>): OrderPayment[] {
-  if (o.payments?.length) return [...o.payments].sort((a, b) => b.paidAt - a.paidAt)
-  const legacy = (o.paidAmount || 0) + (o.deposit || 0)
+  if (o.payments?.length) {
+    return [...o.payments]
+      .map((p) => ({ ...p, amount: Number(p.amount) || 0 }))
+      .sort((a, b) => b.paidAt - a.paidAt)
+  }
+  const legacy = (Number(o.paidAmount) || 0) + (Number(o.deposit) || 0)
   if (legacy <= 0) return []
   return [
     {

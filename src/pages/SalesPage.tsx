@@ -41,7 +41,6 @@ import type {
   OrderLine,
   OrderLineExtra,
   OrderPayment,
-  OrderStatus,
   OrderStatusCore,
   ProductRecipe,
 } from '@/types'
@@ -60,6 +59,7 @@ import {
   orderPaidTotal,
   orderPaymentsList,
   recipeItems,
+  resolveOrderStatus,
   statusFromPayment,
 } from '@/types'
 import { cn, formatDateTime, formatMoney, formatNumber, uid } from '@/lib/utils'
@@ -92,21 +92,8 @@ function emptyLine(f?: Formula, recipe?: ProductRecipe): OrderLine {
   }
 }
 
-function StatusBadge({
-  status,
-  paidTotal,
-  totalAmount,
-}: {
-  status: OrderStatus
-  paidTotal?: number
-  totalAmount?: number
-}) {
-  const core =
-    normalizeOrderStatus(status) === 'huy'
-      ? ('huy' as OrderStatusCore)
-      : typeof paidTotal === 'number' && typeof totalAmount === 'number'
-        ? statusFromPayment(totalAmount, paidTotal)
-        : normalizeOrderStatus(status)
+function StatusBadge({ order }: { order: Pick<Order, 'status' | 'totalAmount' | 'deposit' | 'paidAmount' | 'payments'> }) {
+  const core = resolveOrderStatus(order)
   const c = ORDER_STATUS_COLORS[core]
   return (
     <span className={cn('inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold', c.bg, c.text)}>
@@ -327,6 +314,29 @@ export function SalesPage() {
     if (profile && !assignedTo) setAssignedTo(profile.id)
   }, [profile, assignedTo])
 
+  /** Tự sửa đơn: đã thanh toán một phần mà vẫn Draft → Đang thực hiện */
+  useEffect(() => {
+    if (!writable || !profile || orders.length === 0) return
+    let cancelled = false
+    const fix = async () => {
+      const stale = orders.filter((o) => {
+        const expected = resolveOrderStatus(o)
+        return normalizeOrderStatus(o.status) !== expected
+      })
+      for (const o of stale.slice(0, 30)) {
+        if (cancelled) return
+        const expected = resolveOrderStatus(o)
+        try {
+          await updateOrder(o.id, { status: expected })
+        } catch {
+          /* ignore single fail */
+        }
+      }
+    }
+    void fix()
+    return () => { cancelled = true }
+  }, [orders, writable, profile])
+
   const managers = users.filter((u) => u.active && (u.role === 'admin' || u.role === 'superadmin'))
   const activeFormulas = formulas.filter((f) => f.active)
   const filteredCustomers = useMemo(() => {
@@ -519,10 +529,10 @@ export function SalesPage() {
       const finalPaid = finalPayments.reduce((s, p) => s + (p.amount || 0), 0)
       const finalDebt = Math.max(0, totalAmount - finalPaid)
 
-      // Chỉ Draft khi chưa có tiền. Có cọc → Đang hoạt động. Đủ tiền → Hoàn thiện.
+      // Chỉ Draft khi chưa có tiền. Có cọc → Đang thực hiện. Đủ tiền → Hoàn thiện.
       // Nút "Lưu Draft" chỉ hợp lệ khi chưa thanh toán.
       if (asDraft === true && finalPaid > 0) {
-        setMessage('Đã có thanh toán/cọc — không thể lưu Draft. Trạng thái sẽ là Đang hoạt động.')
+        setMessage('Đã có thanh toán/cọc — không thể lưu Draft. Trạng thái sẽ là Đang thực hiện.')
       }
 
       let status: OrderStatusCore
@@ -675,8 +685,17 @@ export function SalesPage() {
       setMessage('Đơn đã khoá.')
       return
     }
-    const patch: Partial<Order> = { status }
-    if (status !== 'draft' && status !== 'huy' && !order.stockDeducted) {
+    const paid = orderPaidTotal(order)
+    // Không cho đặt Draft khi đã có tiền
+    let next = status
+    if (status === 'draft' && paid > 0) {
+      next = statusFromPayment(order.totalAmount, paid)
+      setMessage('Đã có thanh toán — không thể để Draft. Chuyển Đang thực hiện.')
+    } else if (status !== 'huy') {
+      next = statusFromPayment(order.totalAmount, paid)
+    }
+    const patch: Partial<Order> = { status: next }
+    if (next !== 'draft' && next !== 'huy' && !order.stockDeducted) {
       const deductItems = order.lines.flatMap((line) =>
         line.items.map((item) => {
           const mat = materials.find((m) => m.id === item.materialId)
@@ -709,7 +728,7 @@ export function SalesPage() {
       entityId: order.id,
       entityLabel: order.code,
       action: 'update',
-      summary: `Đổi trạng thái đơn ${order.code} → ${ORDER_STATUS_LABELS[status]}`,
+      summary: `Đổi trạng thái đơn ${order.code} → ${ORDER_STATUS_LABELS[next]}`,
       userId: profile.id,
       userName: profile.displayName,
       createdAt: Date.now(),
@@ -809,7 +828,7 @@ export function SalesPage() {
     const paid = orderPaidTotal(order)
     const core = normalizeOrderStatus(order.status)
     const expected = statusFromPayment(order.totalAmount, paid)
-    // Sửa đơn cũ: đã có cọc mà vẫn Draft → chuyển Đang hoạt động
+    // Sửa đơn cũ: đã có cọc mà vẫn Draft → chuyển Đang thực hiện
     if (
       writable &&
       profile &&
@@ -854,7 +873,7 @@ export function SalesPage() {
   }
 
   const activeOrders = orders.filter((o) => {
-    const s = normalizeOrderStatus(o.status)
+    const s = resolveOrderStatus(o)
     return s !== 'hoan_thien' && s !== 'huy'
   })
 
@@ -1080,7 +1099,7 @@ export function SalesPage() {
                 <div className="rounded-2xl border border-line bg-white p-3">
                   <p className="mb-2 text-sm font-bold">Lịch sử thanh toán</p>
                   {payments.length === 0 && pendingPay <= 0 ? (
-                    <p className="mb-3 text-xs text-muted">Chưa có tiền → đơn là Draft. Nhập cọc bên dưới để chuyển Đang hoạt động.</p>
+                    <p className="mb-3 text-xs text-muted">Chưa có tiền → đơn là Draft. Nhập cọc bên dưới để chuyển Đang thực hiện.</p>
                   ) : (
                     <div className="mb-3 max-h-48 space-y-2 overflow-y-auto">
                       {payments.map((p) => (
@@ -1155,7 +1174,7 @@ export function SalesPage() {
                     ))}
                   </div>
                   <p className="mt-2 text-xs text-muted">
-                    Chưa có tiền → Draft · Có cọc → Đang hoạt động · Đủ tiền → Hoàn thiện. Draft chưa trừ kho.
+                    Chưa có tiền → Draft · Có cọc → Đang thực hiện · Đủ tiền → Hoàn thiện. Draft chưa trừ kho.
                   </p>
                 </div>
                 <Textarea label="Ghi chú" value={note} disabled={!writable} onChange={(e) => setNote(e.target.value)} />
@@ -1198,7 +1217,7 @@ export function SalesPage() {
                 {activeOrders.slice(0, 10).map((o) => (
                   <button key={o.id} type="button" onClick={() => void openOrderDetail(o)} className="flex w-full items-center justify-between rounded-xl bg-surface/70 px-3 py-2 text-left">
                     <span className="font-semibold">{o.code} · {o.customerName}</span>
-                    <StatusBadge status={o.status} paidTotal={orderPaidTotal(o)} totalAmount={o.totalAmount} />
+                    <StatusBadge order={o} />
                   </button>
                 ))}
               </div>
@@ -1215,7 +1234,7 @@ export function SalesPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-display font-bold">{o.code}</p>
                         {o.locked && <Badge tone="warn"><Lock size={10} className="mr-1 inline" />Khoá</Badge>}
-                        <StatusBadge status={o.status} paidTotal={orderPaidTotal(o)} totalAmount={o.totalAmount} />
+                        <StatusBadge order={o} />
                       </div>
                       <p className="truncate text-sm text-muted">
                         {o.customerName} · {formatDateTime(o.orderAt)}
@@ -1279,13 +1298,9 @@ export function SalesPage() {
         {detailOrder && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <StatusBadge
-                status={detailOrder.status}
-                paidTotal={orderPaidTotal(detailOrder)}
-                totalAmount={detailOrder.totalAmount}
-              />
+              <StatusBadge order={detailOrder} />
               {detailOrder.locked && <Badge tone="warn">Đã khoá</Badge>}
-              {normalizeOrderStatus(detailOrder.status) === 'draft' && (
+              {resolveOrderStatus(detailOrder) === 'draft' && (
                 <Badge tone="info">Chưa trừ kho</Badge>
               )}
             </div>
@@ -1356,7 +1371,7 @@ export function SalesPage() {
                         'rounded-lg px-3 py-1.5 text-sm font-semibold',
                         ORDER_STATUS_COLORS[s].bg,
                         ORDER_STATUS_COLORS[s].text,
-                        normalizeOrderStatus(detailOrder.status) === s ? 'ring-2 ring-ink/30' : 'opacity-80',
+                        resolveOrderStatus(detailOrder) === s ? 'ring-2 ring-ink/30' : 'opacity-80',
                       )}
                     >
                       {ORDER_STATUS_LABELS[s]}

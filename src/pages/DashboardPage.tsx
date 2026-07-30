@@ -5,7 +5,7 @@ import { Bento, PageHeader, StatBig, Badge } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { watchCustomers, watchMaterials, watchOrders } from '@/lib/store'
 import type { Customer, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal, resolveOrderStatus } from '@/types'
 import { formatMoney, formatNumber, formatDateTime, getPeriodRange } from '@/lib/utils'
 
 export function DashboardPage() {
@@ -108,7 +108,7 @@ export function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
-                    <Badge tone={statusTone(o.status)}>{ORDER_STATUS_LABELS[normalizeOrderStatus(o.status)]}</Badge>
+                    <Badge tone={statusTone(resolveOrderStatus(o))}>{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
                   </div>
                 </div>
               ))}
@@ -136,11 +136,10 @@ export function DashboardPage() {
   )
 }
 
-function statusTone(s: Order['status']) {
-  const core = normalizeOrderStatus(s)
-  if (core === 'hoan_thien') return 'ok' as const
-  if (core === 'huy') return 'danger' as const
-  if (core === 'draft') return 'info' as const
-  if (core === 'dang_lam') return 'warn' as const
+function statusTone(s: ReturnType<typeof resolveOrderStatus>) {
+  if (s === 'hoan_thien') return 'ok' as const
+  if (s === 'huy') return 'danger' as const
+  if (s === 'draft') return 'info' as const
+  if (s === 'dang_lam') return 'warn' as const
   return 'accent' as const
 }

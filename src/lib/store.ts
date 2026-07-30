@@ -58,11 +58,22 @@ export const DEFAULT_SETTINGS: CompanySettings = {
 }
 
 function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
-  const out = { ...obj }
+  const out: Record<string, unknown> = { ...obj }
   for (const k of Object.keys(out)) {
-    if (out[k] === undefined) delete out[k]
+    const v = out[k]
+    if (v === undefined) {
+      delete out[k]
+    } else if (Array.isArray(v)) {
+      out[k] = v.map((item) =>
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? stripUndefined(item as Record<string, unknown>)
+          : item,
+      )
+    } else if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+      out[k] = stripUndefined(v as Record<string, unknown>)
+    }
   }
-  return out
+  return out as T
 }
 
 // ——— Users ———
@@ -276,7 +287,7 @@ export function watchOrders(cb: (items: Order[]) => void): Unsubscribe {
 }
 
 export async function createOrder(data: Omit<Order, 'id'>) {
-  const ref = await addDoc(collection(db, COL.orders), data)
+  const ref = await addDoc(collection(db, COL.orders), stripUndefined({ ...data } as Record<string, unknown>))
   return ref.id
 }
 

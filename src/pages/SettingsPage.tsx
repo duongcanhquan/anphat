@@ -62,6 +62,7 @@ import {
   canWrite,
   normalizeOrderStatus,
   visibleUsersFor,
+  resolveOrderStatus,
 } from '@/types'
 import { cn, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
@@ -641,7 +642,7 @@ function CustomersTab({
       debt: c.totalDebt || 0,
       sales: c.totalPurchased || 0,
       orderCount: custOrders.length,
-      latestStatus: latest ? normalizeOrderStatus(latest.status) : undefined,
+      latestStatus: latest ? resolveOrderStatus(latest) : undefined,
     }
   }
 

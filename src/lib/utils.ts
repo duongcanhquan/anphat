@@ -18,8 +18,33 @@ export function formatMoneyFull(n: number): string {
 }
 
 export function parseMoneyInput(raw: string): number {
-  const cleaned = raw.replace(/[^\d.-]/g, '')
-  const n = Number(cleaned)
+  let s = String(raw || '').replace(/[^\d.,-]/g, '').trim()
+  if (!s || s === '-' || s === '.' || s === ',') return 0
+
+  const dotCount = (s.match(/\./g) || []).length
+  const commaCount = (s.match(/,/g) || []).length
+
+  if (dotCount && commaCount) {
+    // Dấu xuất hiện sau cùng là phần thập phân
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+      s = s.replace(/\./g, '').replace(',', '.')
+    } else {
+      s = s.replace(/,/g, '')
+    }
+  } else if (dotCount > 1) {
+    // 1.250.000 → nghìn VN
+    s = s.replace(/\./g, '')
+  } else if (commaCount > 1) {
+    s = s.replace(/,/g, '')
+  } else if (commaCount === 1) {
+    s = s.replace(',', '.')
+  } else if (dotCount === 1) {
+    // 1.000 (đúng 3 số sau dấu) → nghìn; còn lại coi thập phân
+    const m = s.match(/^(-?\d+)\.(\d+)$/)
+    if (m && m[2].length === 3) s = m[1] + m[2]
+  }
+
+  const n = Number(s)
   return Number.isFinite(n) ? n : 0
 }
 

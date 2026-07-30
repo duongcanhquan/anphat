@@ -12,7 +12,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge, Bento, Button, Empty, PageHeader, StatBig, Tabs } from '@/components/ui'
 import { watchCustomers, watchMaterials, watchOrders, watchPayments } from '@/lib/store'
 import type { Customer, DebtPayment, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal, resolveOrderStatus } from '@/types'
 import {
   formatDateTime,
   formatMoney,
@@ -160,7 +160,7 @@ export function ReportsPage() {
                       </div>
                       <div className="text-right">
                         <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
-                        <Badge tone="accent">{ORDER_STATUS_LABELS[normalizeOrderStatus(o.status)]}</Badge>
+                        <Badge tone="accent">{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
                       </div>
                     </div>
                   ))}
