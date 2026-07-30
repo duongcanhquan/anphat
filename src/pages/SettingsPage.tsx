@@ -111,7 +111,7 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Cài đặt" subtitle="Xây dựng hệ thống" />
+      <PageHeader title="Cài đặt" />
       {!writable && (
         <div className="mb-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-warn">
           Bạn đang ở chế độ Viewer — chỉ xem, không chỉnh sửa.

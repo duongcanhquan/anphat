@@ -164,7 +164,6 @@ export function WarehousePage() {
     <div>
       <PageHeader
         title="Kho vật liệu"
-        subtitle="Tồn kho · tổng kết · lịch sử nhập xuất"
         action={writable && tab === 'kho' ? (
           <Button onClick={() => { setRows([newRow()]); setOpen(true) }}>
             <Plus size={18} /> Nhập kho

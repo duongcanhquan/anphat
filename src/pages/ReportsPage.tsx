@@ -74,7 +74,7 @@ export function ReportsPage() {
 
   return (
     <div>
-      <PageHeader title="Tổng kết" subtitle="Ngày · Tuần · Tháng · Năm — dễ nhìn trên điện thoại" />
+      <PageHeader title="Tổng kết" />
 
       <Tabs
         tabs={[
@@ -129,7 +129,7 @@ export function ReportsPage() {
 
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             <Bento className="bg-ink text-surface">
-              <StatBig label="Doanh thu" value={formatMoney(sales)} tone="accent" />
+              <StatBig label="Doanh số" value={formatMoney(sales)} tone="accent" />
             </Bento>
             <Bento>
               <StatBig label="Đã thanh toán" value={formatMoney(deposit)} tone="ok" />

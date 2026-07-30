@@ -777,7 +777,7 @@ export function SalesPage() {
 
   return (
     <div>
-      <PageHeader title="Bán hàng" subtitle="Tạo đơn hàng và theo dõi đơn đang triển khai" />
+      <PageHeader title="Bán hàng" />
       <Tabs
         tabs={[
           { id: 'tao-don', label: editingOrder ? `Sửa ${editingOrder.code}` : 'Tạo đơn hàng' },
