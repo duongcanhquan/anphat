@@ -126,37 +126,57 @@ export function ReportsPage() {
             </div>
           </Bento>
 
-          <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
-            <Bento className="bg-ink text-surface">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Bento className="min-h-[7.5rem]">
               <StatBig label="Doanh số" value={formatMoney(sales)} tone="accent" />
             </Bento>
-            <Bento>
+            <Bento className="min-h-[7.5rem]">
               <StatBig label="Đã thanh toán" value={formatMoney(paidTotal)} tone="ok" />
             </Bento>
-            <Bento>
+            <Bento className="min-h-[7.5rem]">
               <StatBig label="Công nợ kỳ" value={formatMoney(debtPeriod)} tone="warn" />
+            </Bento>
+            <Bento className="min-h-[7.5rem]">
+              <StatBig
+                label="Công nợ chung"
+                value={formatMoney(totalDebt)}
+                tone="warn"
+                hint={`${customers.filter((c) => c.totalDebt > 0).length} khách đang nợ`}
+              />
             </Bento>
           </div>
 
-          <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            <Bento title="Công nợ chung" subtitle="Tất cả khách hàng">
-              <p className="num text-3xl font-extrabold text-warn">{formatMoney(totalDebt)}</p>
-              <p className="mt-1 text-sm text-muted">{customers.filter((c) => c.totalDebt > 0).length} khách đang nợ</p>
-            </Bento>
+          <div className="mt-3">
             <Bento title="Đơn trong kỳ" subtitle={`${activeOrders.length} đơn (không kể huỷ)`}>
               {activeOrders.length === 0 ? (
                 <Empty text="Không có đơn trong kỳ này." />
               ) : (
-                <div className="max-h-80 space-y-2 overflow-y-auto">
+                <div className="max-h-[28rem] space-y-2 overflow-y-auto">
                   {activeOrders.map((o) => (
-                    <div key={o.id} className="flex justify-between gap-2 rounded-xl bg-surface/70 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold leading-tight">{o.customerName || '—'}</p>
-                        <p className="mt-0.5 text-[11px] text-muted">{o.code} · {formatDateTime(o.orderAt)}</p>
+                    <div key={o.id} className="rounded-xl bg-surface/70 px-3 py-2.5">
+                      <div className="flex justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold leading-tight">{o.customerName || '—'}</p>
+                          <p className="mt-0.5 text-[11px] text-muted">{o.code} · {formatDateTime(o.orderAt)}</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
+                          <Badge tone="accent">{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
+                        </div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <p className="num text-sm font-bold">{formatMoney(o.totalAmount)}</p>
-                        <Badge tone="accent">{ORDER_STATUS_LABELS[resolveOrderStatus(o)]}</Badge>
+                      <div className="mt-2 space-y-1 border-t border-line/60 pt-2">
+                        {(o.lines || []).length === 0 ? (
+                          <p className="text-xs text-muted">Không có dòng sản phẩm.</p>
+                        ) : (
+                          (o.lines || []).map((l) => (
+                            <div key={l.id} className="flex justify-between gap-2 text-sm">
+                              <span className="min-w-0 truncate">{l.formulaName || 'Sản phẩm'}</span>
+                              <span className="num shrink-0 font-semibold text-muted">
+                                × {formatNumber(l.quantity)} {l.unit}
+                              </span>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   ))}
