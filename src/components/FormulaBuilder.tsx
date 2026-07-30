@@ -6,8 +6,85 @@ import { uid } from '@/lib/utils'
 
 /** Đơn vị sau quy đổi (toUnit) nếu có, không thì đơn vị vật liệu */
 export function unitAfterConversion(mat: Material, conversions: Conversion[]): string {
-  const c = conversions.find((x) => x.materialId === mat.id)
+  const c = getMaterialConversion(mat, conversions)
   return c?.toUnit || mat.unit
+}
+
+/** Lấy quy đổi gắn với vật liệu (ưu tiên fromUnit = đơn vị nhập) */
+export function getMaterialConversion(
+  mat: Material,
+  conversions: Conversion[],
+): Conversion | undefined {
+  return (
+    conversions.find((x) => x.materialId === mat.id && x.fromUnit === mat.unit) ||
+    conversions.find((x) => x.materialId === mat.id)
+  )
+}
+
+/**
+ * Tồn kho theo 2 đơn vị:
+ * - input: đơn vị nhập (material.unit / stock)
+ * - converted: đơn vị quy đổi (toUnit)
+ * Quy tắc: 1 fromUnit = factor toUnit
+ */
+export function stockDualUnits(
+  mat: Material,
+  conversions: Conversion[],
+): {
+  inputQty: number
+  inputUnit: string
+  convertedQty: number | null
+  convertedUnit: string | null
+  factor: number | null
+} {
+  const inputQty = mat.stock
+  const inputUnit = mat.unit
+  const c = getMaterialConversion(mat, conversions)
+  if (!c || !(c.factor > 0)) {
+    return { inputQty, inputUnit, convertedQty: null, convertedUnit: null, factor: null }
+  }
+  // stock đang theo đơn vị nhập (= fromUnit)
+  if (c.fromUnit === mat.unit || !conversions.find((x) => x.materialId === mat.id && x.fromUnit === mat.unit)) {
+    return {
+      inputQty,
+      inputUnit,
+      convertedQty: inputQty * c.factor,
+      convertedUnit: c.toUnit,
+      factor: c.factor,
+    }
+  }
+  // trường hợp stock đã theo toUnit
+  if (c.toUnit === mat.unit) {
+    return {
+      inputQty,
+      inputUnit,
+      convertedQty: inputQty / c.factor,
+      convertedUnit: c.fromUnit,
+      factor: c.factor,
+    }
+  }
+  return { inputQty, inputUnit, convertedQty: null, convertedUnit: null, factor: null }
+}
+
+/** Đổi số lượng từ đơn vị quy đổi (hoặc bất kỳ) về đơn vị tồn kho để trừ kho */
+export function toStockUnitQuantity(
+  quantity: number,
+  quantityUnit: string,
+  mat: Material,
+  conversions: Conversion[],
+): number {
+  if (!quantityUnit || quantityUnit === mat.unit) return quantity
+  const c = getMaterialConversion(mat, conversions)
+  if (!c || !(c.factor > 0)) return quantity
+  // quantity đang ở toUnit → chia factor về fromUnit (= stock)
+  if (quantityUnit === c.toUnit && (c.fromUnit === mat.unit || mat.unit !== c.toUnit)) {
+    return quantity / c.factor
+  }
+  // quantity đang ở fromUnit nhưng stock là toUnit
+  if (quantityUnit === c.fromUnit && mat.unit === c.toUnit) {
+    return quantity * c.factor
+  }
+  return quantity
 }
 
 export function FormulaBuilder({

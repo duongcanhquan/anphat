@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Lock, Search, Pencil } from 'lucide-react'
 import { MoneyInput } from '@/components/MoneyInput'
-import { FormulaBuilder } from '@/components/FormulaBuilder'
+import { FormulaBuilder, stockDualUnits, toStockUnitQuantity } from '@/components/FormulaBuilder'
 import {
   Badge,
   Bento,
@@ -24,6 +24,7 @@ import {
   updateCustomer,
   updateOrder,
   watchCustomers,
+  watchConversions,
   watchFormulas,
   watchMaterials,
   watchOrders,
@@ -31,6 +32,7 @@ import {
 } from '@/lib/store'
 import type {
   AppUser,
+  Conversion,
   Customer,
   Formula,
   FormulaItem,
@@ -253,6 +255,7 @@ export function SalesPage() {
   const [tab, setTab] = useState<SalesTab>('tao-don')
   const [formulas, setFormulas] = useState<Formula[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
+  const [conversions, setConversions] = useState<Conversion[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
@@ -278,7 +281,8 @@ export function SalesPage() {
     const u3 = watchOrders(setOrders)
     const u4 = watchMaterials(setMaterials)
     const u5 = watchUsers(setUsers)
-    return () => { u1(); u2(); u3(); u4(); u5() }
+    const u6 = watchConversions(setConversions)
+    return () => { u1(); u2(); u3(); u4(); u5(); u6() }
   }, [])
 
   useEffect(() => {
@@ -302,17 +306,29 @@ export function SalesPage() {
   const debt = Math.max(0, totalAmount - paidAmount)
 
   const materialNeed = useMemo(() => {
-    const map = new Map<string, { name: string; unit: string; qty: number }>()
+    const map = new Map<string, { id: string; name: string; unit: string; qty: number }>()
     for (const line of lines) {
       for (const item of line.items) {
         const key = item.materialId
-        const cur = map.get(key) || { name: item.materialName, unit: item.unit, qty: 0 }
+        const cur = map.get(key) || { id: item.materialId, name: item.materialName, unit: item.unit, qty: 0 }
         cur.qty += item.quantityPerUnit * line.quantity
         map.set(key, cur)
       }
     }
-    return [...map.values()]
-  }, [lines])
+    return [...map.values()].map((row) => {
+      const mat = materials.find((m) => m.id === row.id)
+      const dual = mat ? stockDualUnits(mat, conversions) : null
+      const stockQty = mat ? toStockUnitQuantity(row.qty, row.unit, mat, conversions) : row.qty
+      return {
+        ...row,
+        stockQty,
+        stockUnit: mat?.unit || row.unit,
+        stockAvailable: dual?.inputQty ?? null,
+        convertedAvailable: dual?.convertedQty ?? null,
+        convertedUnit: dual?.convertedUnit ?? null,
+      }
+    })
+  }, [lines, materials, conversions])
 
   const updateLine = (id: string, patch: Partial<OrderLine>) => {
     setLines((prev) =>
@@ -444,12 +460,19 @@ export function SalesPage() {
         setDetailOrder({ ...orderPayload, id: editingOrder.id })
       } else {
         const deductItems = lines.flatMap((line) =>
-          line.items.map((item) => ({
-            materialId: item.materialId,
-            materialName: item.materialName,
-            unit: item.unit,
-            quantity: item.quantityPerUnit * line.quantity,
-          })),
+          line.items.map((item) => {
+            const mat = materials.find((m) => m.id === item.materialId)
+            const qtyConverted = item.quantityPerUnit * line.quantity
+            const qtyStock = mat
+              ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
+              : qtyConverted
+            return {
+              materialId: item.materialId,
+              materialName: item.materialName,
+              unit: mat?.unit || item.unit,
+              quantity: qtyStock,
+            }
+          }),
         )
         const id = await createOrder(orderPayload)
         if (deductItems.length > 0) {
@@ -719,9 +742,22 @@ export function SalesPage() {
               ) : (
                 <div className="space-y-2">
                   {materialNeed.map((m) => (
-                    <div key={m.name + m.unit} className="flex justify-between rounded-xl bg-surface px-3 py-2">
-                      <span className="font-medium">{m.name}</span>
-                      <span className="num font-bold">{formatNumber(m.qty)} {m.unit}</span>
+                    <div key={m.id + m.unit} className="rounded-xl bg-surface px-3 py-2">
+                      <div className="flex justify-between gap-2">
+                        <span className="font-medium">{m.name}</span>
+                        <span className="num font-bold">
+                          {formatNumber(m.qty)} {m.unit}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted">
+                        Trừ kho: {formatNumber(m.stockQty)} {m.stockUnit}
+                        {m.stockAvailable != null && (
+                          <> · Tồn: {formatNumber(m.stockAvailable)} {m.stockUnit}</>
+                        )}
+                        {m.convertedAvailable != null && m.convertedUnit && (
+                          <> ({formatNumber(m.convertedAvailable)} {m.convertedUnit})</>
+                        )}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -838,6 +874,7 @@ export function SalesPage() {
           <div className="space-y-3">
             <FormulaBuilder
               materials={materials}
+              conversions={conversions}
               materialIds={ratioModal.materialIds}
               expression={ratioModal.items.map((i) => ({
                 id: i.materialId,

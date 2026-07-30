@@ -5,12 +5,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   addStockEntry,
   updateMaterial,
+  watchConversions,
   watchMaterials,
   watchStockEntries,
   watchUsers,
 } from '@/lib/store'
-import type { Material, StockEntry, WeightUnit } from '@/types'
+import type { Conversion, Material, StockEntry, WeightUnit } from '@/types'
 import { allWeightUnits, canWrite } from '@/types'
+import { stockDualUnits } from '@/components/FormulaBuilder'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
 type StockRow = {
@@ -28,6 +30,7 @@ export function WarehousePage() {
   const { profile } = useAuth()
   const writable = canWrite(profile?.role)
   const [materials, setMaterials] = useState<Material[]>([])
+  const [conversions, setConversions] = useState<Conversion[]>([])
   const [entries, setEntries] = useState<StockEntry[]>([])
   const [userNames, setUserNames] = useState<Record<string, string>>({})
   const [open, setOpen] = useState(false)
@@ -56,7 +59,8 @@ export function WarehousePage() {
       users.forEach((u) => { map[u.id] = u.displayName })
       setUserNames(map)
     })
-    return () => { u1(); u2(); u3() }
+    const u4 = watchConversions(setConversions)
+    return () => { u1(); u2(); u3(); u4() }
   }, [])
 
   const active = materials.filter((m) => m.active)
@@ -161,6 +165,7 @@ export function WarehousePage() {
           {active.map((m) => {
             const low = m.stock <= m.lowStockAlert
             const summary = importSummary.find((s) => s.name === m.name)
+            const dual = stockDualUnits(m, conversions)
             return (
               <button
                 type="button"
@@ -172,11 +177,32 @@ export function WarehousePage() {
                   <p className="font-display text-sm font-bold leading-tight sm:text-base">{m.name}</p>
                   {low && <Badge tone="danger">Thấp</Badge>}
                 </div>
-                <p className="num mt-3 text-3xl font-extrabold text-ink sm:text-4xl">{formatNumber(m.stock)}</p>
-                <p className="mt-1 text-sm font-semibold text-accent">{m.unit}</p>
+
+                <div className="mt-3 space-y-2">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị nhập)</p>
+                    <p className="num text-2xl font-extrabold text-ink sm:text-3xl">
+                      {formatNumber(dual.inputQty)} <span className="text-base font-semibold text-accent">{dual.inputUnit}</span>
+                    </p>
+                  </div>
+                  {dual.convertedQty != null && dual.convertedUnit && (
+                    <div className="rounded-xl bg-surface/80 px-2.5 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Tồn (đơn vị quy đổi)</p>
+                      <p className="num text-lg font-extrabold text-ink">
+                        {formatNumber(dual.convertedQty)} <span className="text-sm font-semibold text-accent">{dual.convertedUnit}</span>
+                      </p>
+                      {dual.factor != null && (
+                        <p className="mt-0.5 text-[10px] text-muted">
+                          1 {dual.inputUnit} = {formatNumber(dual.factor)} {dual.convertedUnit}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {summary && (
                   <p className="mt-2 text-xs text-muted">
-                    Nhập: {formatNumber(summary.totalIn)} · Xuất: {formatNumber(summary.totalOut)}
+                    Nhập: {formatNumber(summary.totalIn)} · Xuất: {formatNumber(summary.totalOut)} ({dual.inputUnit})
                   </p>
                 )}
                 <p className="mt-2 text-xs text-accent">Chạm để xem lộ trình nhập/xuất</p>
@@ -282,7 +308,19 @@ export function WarehousePage() {
               <Input label="Đến ngày" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
             <p className="text-sm text-muted">
-              Tồn hiện tại: <strong className="num">{formatNumber(historyMat.stock)} {historyMat.unit}</strong>
+              Tồn hiện tại:{' '}
+              <strong className="num">{formatNumber(historyMat.stock)} {historyMat.unit}</strong>
+              {(() => {
+                const dual = stockDualUnits(historyMat, conversions)
+                if (dual.convertedQty == null || !dual.convertedUnit) return null
+                return (
+                  <>
+                    {' · '}
+                    <strong className="num">{formatNumber(dual.convertedQty)} {dual.convertedUnit}</strong>
+                    <span className="text-muted"> (quy đổi)</span>
+                  </>
+                )
+              })()}
             </p>
             {filteredHistory.length === 0 ? (
               <Empty text="Không có phiếu trong khoảng thời gian này." />
