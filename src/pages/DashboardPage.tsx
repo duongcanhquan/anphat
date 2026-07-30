@@ -41,7 +41,7 @@ export function DashboardPage() {
     <div>
       <PageHeader
         title={`Xin chào, ${profile?.displayName?.split(' ').slice(-1)[0] || ''}`}
-        subtitle="Tổng quan nhà máy Asphalt An Phát"
+        subtitle="Thông tin tổng hợp An Phát"
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

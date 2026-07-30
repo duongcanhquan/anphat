@@ -17,9 +17,6 @@ export function Logo({ size = 'md', light = false }: { size?: 'sm' | 'md' | 'lg'
         <p className={`font-display font-extrabold tracking-tight ${s.text} ${light ? 'text-surface' : 'text-ink'}`}>
           AN PHÁT
         </p>
-        <p className={`mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${light ? 'text-accent-soft' : 'text-accent'}`}>
-          Asphalt
-        </p>
       </div>
     </div>
   )

@@ -13,19 +13,41 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth'
-import { auth } from '@/lib/firebase'
-import { getUser, listUsers, upsertUser } from '@/lib/store'
+import {
+  applyAuthPersistence,
+  auth,
+  createAuthUserSecondary,
+  getRememberLogin,
+  sendUserPasswordReset,
+  updateCurrentUserPassword,
+} from '@/lib/firebase'
+import { deleteUserDoc, getUser, listUsers, upsertUser } from '@/lib/store'
 import type { AppUser, UserRole } from '@/types'
+
+interface CreateManagedUserInput {
+  email: string
+  password: string
+  displayName: string
+  role: UserRole
+}
 
 interface AuthState {
   firebaseUser: User | null
   profile: AppUser | null
   loading: boolean
   authError: string | null
-  login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, name: string) => Promise<void>
+  login: (email: string, password: string, remember?: boolean) => Promise<void>
+  register: (email: string, password: string, name: string, remember?: boolean) => Promise<void>
   logout: () => Promise<void>
   refreshProfile: () => Promise<void>
+  createManagedUser: (input: CreateManagedUserInput) => Promise<AppUser>
+  updateManagedUser: (
+    user: AppUser,
+    patch: Partial<Pick<AppUser, 'displayName' | 'role' | 'active'>>,
+  ) => Promise<void>
+  resetManagedUserPassword: (email: string) => Promise<void>
+  changeOwnPassword: (newPassword: string) => Promise<void>
+  removeManagedUser: (user: AppUser) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -65,6 +87,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Áp dụng persistence đã lưu (mặc định ghi nhớ đăng nhập)
+    void applyAuthPersistence(getRememberLogin()).catch(() => undefined)
+
     const unsub = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user)
       if (user) {
@@ -84,11 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub
   }, [])
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, remember = true) => {
+    await applyAuthPersistence(remember)
     await signInWithEmailAndPassword(auth, email, password)
   }
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (email: string, password: string, name: string, remember = true) => {
+    await applyAuthPersistence(remember)
     const cred = await createUserWithEmailAndPassword(auth, email, password)
     await updateProfile(cred.user, { displayName: name })
     const existing = await listUsers()
@@ -115,6 +142,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (firebaseUser) await loadProfile(firebaseUser)
   }
 
+  const createManagedUser = async (input: CreateManagedUserInput): Promise<AppUser> => {
+    if (!profile || (profile.role !== 'superadmin' && profile.role !== 'admin')) {
+      throw new Error('Không có quyền tạo tài khoản.')
+    }
+    if (profile.role === 'admin' && input.role !== 'admin') {
+      throw new Error('Admin chỉ được tạo tài khoản Admin dưới mình.')
+    }
+    const existing = await listUsers()
+    if (existing.length >= 10) {
+      throw new Error('Đã đạt giới hạn 10 tài khoản.')
+    }
+    const { uid, email } = await createAuthUserSecondary(input.email.trim(), input.password)
+    const user: AppUser = {
+      id: uid,
+      email,
+      displayName: input.displayName.trim() || email.split('@')[0],
+      role: input.role,
+      active: true,
+      createdAt: Date.now(),
+      createdBy: profile.id,
+    }
+    await upsertUser(user)
+    return user
+  }
+
+  const updateManagedUser = async (
+    user: AppUser,
+    patch: Partial<Pick<AppUser, 'displayName' | 'role' | 'active'>>,
+  ) => {
+    if (!profile || (profile.role !== 'superadmin' && profile.role !== 'admin')) {
+      throw new Error('Không có quyền sửa tài khoản.')
+    }
+    if (profile.role === 'admin') {
+      if (user.role === 'viewer' || user.role === 'superadmin') {
+        throw new Error('Admin không được sửa Viewer / Superadmin.')
+      }
+      if (patch.role && patch.role !== 'admin') {
+        throw new Error('Admin chỉ quản lý tài khoản Admin.')
+      }
+    }
+    await upsertUser({ ...user, ...patch })
+    if (user.id === profile.id) await refreshProfile()
+  }
+
+  const resetManagedUserPassword = async (email: string) => {
+    await sendUserPasswordReset(email)
+  }
+
+  const changeOwnPassword = async (newPassword: string) => {
+    await updateCurrentUserPassword(newPassword)
+  }
+
+  const removeManagedUser = async (user: AppUser) => {
+    if (!profile) throw new Error('Chưa đăng nhập')
+    if (user.id === profile.id) throw new Error('Không thể xoá chính mình.')
+    if (profile.role === 'superadmin') {
+      await deleteUserDoc(user.id)
+      return
+    }
+    if (profile.role === 'admin') {
+      if (user.role !== 'admin') throw new Error('Admin chỉ xoá được tài khoản Admin dưới mình.')
+      await deleteUserDoc(user.id)
+      return
+    }
+    throw new Error('Không có quyền xoá tài khoản.')
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -126,6 +220,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         refreshProfile,
+        createManagedUser,
+        updateManagedUser,
+        resetManagedUserPassword,
+        changeOwnPassword,
+        removeManagedUser,
       }}
     >
       {children}

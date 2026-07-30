@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Camera, Plus, Trash2, Lock } from 'lucide-react'
+import { Camera, Plus, Trash2, Lock, Search } from 'lucide-react'
 import {
   Badge,
   Bento,
@@ -66,6 +66,7 @@ export function SalesPage() {
   // draft order
   const [lines, setLines] = useState<OrderLine[]>([emptyLine()])
   const [customerId, setCustomerId] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('')
   const [deposit, setDeposit] = useState('')
   const [paidAmount, setPaidAmount] = useState('')
   const [contractAmount, setContractAmount] = useState('')
@@ -90,6 +91,17 @@ export function SalesPage() {
   }, [])
 
   const activeFormulas = formulas.filter((f) => f.active)
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase()
+    if (!q) return customers
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.taxCode.toLowerCase().includes(q) ||
+        c.phone.toLowerCase().includes(q) ||
+        c.representative.toLowerCase().includes(q),
+    )
+  }, [customers, customerSearch])
   const totalAmount = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines])
   const depositNum = Number(deposit) || 0
   const paidNum = Number(paidAmount) || 0
@@ -304,7 +316,7 @@ export function SalesPage() {
       <Tabs
         tabs={[
           { id: 'tinh-nhanh', label: 'Tính nhanh' },
-          { id: 'ban-khach', label: 'Bán khách' },
+          { id: 'ban-khach', label: 'Khách hàng' },
           { id: 'don', label: 'Đơn hàng' },
         ]}
         value={tab}
@@ -315,7 +327,23 @@ export function SalesPage() {
         <div className="grid gap-3 lg:grid-cols-5">
           <div className="space-y-3 lg:col-span-3">
             {tab === 'ban-khach' && (
-              <Bento title="Khách hàng">
+              <Bento title="Danh sách khách hàng">
+                <div className="mb-3 flex gap-2">
+                  <div className="flex-1">
+                    <Input
+                      label="Tìm khách hàng"
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      placeholder="Tên, MST, SĐT…"
+                      disabled={!writable}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button type="button" variant="outline" className="h-[42px]" disabled={!writable}>
+                      <Search size={16} /> Search
+                    </Button>
+                  </div>
+                </div>
                 <Select
                   label="Chọn khách"
                   value={customerId}
@@ -323,12 +351,15 @@ export function SalesPage() {
                   disabled={!writable}
                 >
                   <option value="">— Chọn khách hàng —</option>
-                  {customers.map((c) => (
+                  {filteredCustomers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} {c.taxCode ? `(${c.taxCode})` : ''}
                     </option>
                   ))}
                 </Select>
+                {customerSearch.trim() && filteredCustomers.length === 0 && (
+                  <p className="mt-2 text-sm text-muted">Không tìm thấy khách phù hợp.</p>
+                )}
               </Bento>
             )}
 

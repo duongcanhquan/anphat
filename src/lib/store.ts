@@ -73,6 +73,10 @@ export async function upsertUser(user: AppUser) {
   await setDoc(doc(db, COL.users, user.id), stripUndefined({ ...user }), { merge: true })
 }
 
+export async function deleteUserDoc(uid: string) {
+  await deleteDoc(doc(db, COL.users, uid))
+}
+
 export async function listUsers(): Promise<AppUser[]> {
   const snap = await getDocs(collection(db, COL.users))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as AppUser)

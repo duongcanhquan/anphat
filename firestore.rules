@@ -29,21 +29,47 @@ service cloud.firestore {
       return isActive() && role() == 'superadmin';
     }
 
-    // Hồ sơ người dùng — ai đăng nhập cũng đọc được (team nhỏ ≤10)
-    // Tự tạo được đúng document của mình (bootstrap Superadmin)
+    // Super Admin > Admin > Viewer
+    // Admin tạo/sửa tài khoản Admin dưới mình; không quản lý Viewer
     match /users/{userId} {
       allow read: if signedIn();
-      allow create: if signedIn()
-        && request.auth.uid == userId
-        && request.resource.data.keys().hasAll(['email', 'displayName', 'role', 'active', 'createdAt'])
-        && request.resource.data.active == true
-        && request.resource.data.role in ['superadmin', 'admin', 'viewer'];
+
+      allow create: if
+        // Bootstrap / tự tạo hồ sơ của chính mình
+        (signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['email', 'displayName', 'role', 'active', 'createdAt'])
+          && request.resource.data.active == true
+          && request.resource.data.role in ['superadmin', 'admin', 'viewer'])
+        // Superadmin tạo bất kỳ role
+        || (isSuper()
+          && request.resource.data.role in ['superadmin', 'admin', 'viewer']
+          && request.resource.data.active == true)
+        // Admin chỉ tạo Admin dưới mình
+        || (isAdmin()
+          && role() == 'admin'
+          && request.resource.data.role == 'admin'
+          && request.resource.data.active == true
+          && request.resource.data.createdBy == request.auth.uid);
+
       allow update: if isSuper()
+        || (isAdmin()
+          && role() == 'admin'
+          && resource.data.role == 'admin'
+          && request.resource.data.role == 'admin'
+          && resource.data.role != 'viewer'
+          && resource.data.role != 'superadmin')
         || (signedIn()
           && request.auth.uid == userId
           && request.resource.data.role == resource.data.role
           && request.resource.data.active == resource.data.active);
-      allow delete: if isSuper();
+
+      allow delete: if isSuper()
+        || (isAdmin()
+          && role() == 'admin'
+          && resource.data.role == 'admin'
+          && resource.data.createdBy == request.auth.uid
+          && userId != request.auth.uid);
     }
 
     match /settings/{docId} {

@@ -26,7 +26,24 @@ export interface AppUser {
   role: UserRole
   active: boolean
   createdAt: number
+  /** Admin/superadmin đã tạo tài khoản này (phân cấp) */
+  createdBy?: string
 }
+
+export type FormulaOp = '+' | '-' | '*' | '/'
+
+/** Token trong biểu thức công thức (kéo thả / chọn toán tử) */
+export type FormulaExprToken =
+  | {
+      id: string
+      kind: 'material'
+      materialId: string
+      materialName: string
+      quantityPerUnit: number
+      unit: WeightUnit
+    }
+  | { id: string; kind: 'op'; op: FormulaOp }
+  | { id: string; kind: 'number'; value: number }
 
 export interface Material {
   id: string
@@ -87,6 +104,8 @@ export interface Formula {
   unit: WeightUnit
   unitPrice: number
   items: FormulaItem[]
+  /** Biểu thức tỷ lệ vật liệu với +, −, ×, ÷ */
+  expression?: FormulaExprToken[]
   history: FormulaVersion[]
   active: boolean
   createdAt: number
@@ -200,4 +219,37 @@ export function canDeleteMaterial(role: UserRole | undefined): boolean {
 
 export function canUnlockOrder(role: UserRole | undefined): boolean {
   return role === 'superadmin'
+}
+
+/** Superadmin & Admin được quản lý tài khoản */
+export function canManageUsers(role: UserRole | undefined): boolean {
+  return role === 'admin' || role === 'superadmin'
+}
+
+/** Admin không thấy Viewer; Superadmin thấy tất cả */
+export function visibleUsersFor(role: UserRole | undefined, users: AppUser[]): AppUser[] {
+  if (role === 'superadmin') return users
+  if (role === 'admin') return users.filter((u) => u.role !== 'viewer')
+  return []
+}
+
+/** Rút danh sách vật liệu từ biểu thức công thức (để trừ kho) */
+export function itemsFromExpression(expression: FormulaExprToken[] | undefined): FormulaItem[] {
+  if (!expression?.length) return []
+  const map = new Map<string, FormulaItem>()
+  for (const t of expression) {
+    if (t.kind !== 'material') continue
+    const prev = map.get(t.materialId)
+    if (prev) {
+      prev.quantityPerUnit += t.quantityPerUnit
+    } else {
+      map.set(t.materialId, {
+        materialId: t.materialId,
+        materialName: t.materialName,
+        quantityPerUnit: t.quantityPerUnit,
+        unit: t.unit,
+      })
+    }
+  }
+  return [...map.values()]
 }

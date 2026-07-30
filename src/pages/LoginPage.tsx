@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Logo } from '@/components/Logo'
 import { FirestoreSetupHelp, isPermissionError } from '@/components/FirestoreSetupHelp'
 import { Button, Input } from '@/components/ui'
+import { getRememberLogin } from '@/lib/firebase'
 
 export function LoginPage() {
   const { login, register, firebaseUser, profile, loading, authError, logout } = useAuth()
@@ -12,6 +13,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [remember, setRemember] = useState(() => getRememberLogin())
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -25,8 +27,8 @@ export function LoginPage() {
     setError('')
     setBusy(true)
     try {
-      if (mode === 'login') await login(email.trim(), password)
-      else await register(email.trim(), password, name.trim() || 'Người dùng')
+      if (mode === 'login') await login(email.trim(), password, remember)
+      else await register(email.trim(), password, name.trim() || 'Người dùng', remember)
       navigate('/')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Không thể đăng nhập'
@@ -99,6 +101,16 @@ export function LoginPage() {
             required
             minLength={6}
           />
+
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="h-4 w-4 accent-[var(--accent)]"
+            />
+            Ghi nhớ đăng nhập
+          </label>
 
           {showPermissionHelp ? (
             <div className="space-y-2">
