@@ -173,15 +173,16 @@ export function FormulaBuilder({
       <div className="rounded-2xl border border-line bg-surface/40 p-3">
         <p className="mb-2 text-sm font-semibold">Vật liệu</p>
         <p className="mb-2 text-xs text-muted">Gõ tìm → chạm hoặc kéo vào công thức</p>
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-2">
-          <Search size={14} className="shrink-0 text-muted" />
+        <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-2.5">
+          <Search size={16} className="shrink-0 text-muted" />
           <input
             type="search"
             value={matQuery}
             onChange={(e) => setMatQuery(e.target.value)}
             placeholder="Gõ tên vật liệu…"
             disabled={readOnly}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted/70 disabled:opacity-50"
+            className="w-full min-w-0 bg-transparent text-base outline-none placeholder:text-muted/70 disabled:opacity-50"
+            autoComplete="off"
           />
         </div>
         <div className="max-h-64 space-y-1.5 overflow-y-auto">

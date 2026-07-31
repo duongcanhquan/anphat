@@ -146,13 +146,13 @@ export function AppLayout() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  'flex min-w-0 flex-col items-center gap-0.5 rounded-xl px-0.5 py-2 text-[9px] font-semibold leading-tight sm:gap-1 sm:text-[10px]',
+                  'flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1.5 text-[10px] font-semibold leading-none sm:gap-1 sm:py-2 sm:text-[11px]',
                   isActive ? 'bg-accent-soft text-accent' : 'text-muted',
                 )
               }
             >
               <item.icon size={18} className="shrink-0" />
-              <span className="w-full whitespace-normal text-center">{item.label}</span>
+              <span className="w-full truncate text-center">{item.label}</span>
             </NavLink>
           ))}
         </nav>

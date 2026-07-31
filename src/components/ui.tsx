@@ -112,7 +112,7 @@ export function Input({
       {label && <span className="text-sm font-medium text-ink-soft">{label}</span>}
       <input
         className={cn(
-          'w-full rounded-xl border border-line bg-white/80 px-3 py-2.5 text-base text-ink placeholder:text-muted/70',
+          'w-full min-w-0 max-w-full rounded-xl border border-line bg-white/80 px-3 py-2.5 text-base text-ink placeholder:text-muted/70',
           className,
         )}
         {...props}
@@ -209,21 +209,24 @@ export function Modal({
 }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[90] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <button type="button" className="absolute inset-0 bg-ink/50 backdrop-blur-[2px]" onClick={onClose} aria-label="Đóng" />
       <div
         className={cn(
-          'relative z-10 max-h-[min(92dvh,100%)] w-full overflow-x-hidden overflow-y-auto rounded-t-3xl bg-card p-4 shadow-2xl animate-fade-up sm:rounded-3xl sm:p-5',
+          'relative z-10 flex max-h-[min(92dvh,100%)] w-full flex-col overflow-hidden rounded-t-3xl bg-card shadow-2xl animate-fade-up sm:rounded-3xl',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
       >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h3 className="font-display text-xl font-bold">{title}</h3>
-          <Button variant="ghost" size="sm" onClick={onClose} type="button">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line/60 px-4 py-3 sm:px-5">
+          <h3 className="min-w-0 flex-1 break-words font-display text-lg font-bold sm:text-xl">{title}</h3>
+          <Button variant="ghost" size="sm" onClick={onClose} type="button" className="shrink-0">
             Đóng
           </Button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5">
+          {children}
+        </div>
       </div>
     </div>
   )
