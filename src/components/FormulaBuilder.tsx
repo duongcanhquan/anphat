@@ -1,8 +1,16 @@
-import { useState, type DragEvent } from 'react'
-import { GripVertical, X, Equal } from 'lucide-react'
+import { useMemo, useState, type DragEvent } from 'react'
+import { GripVertical, Search, X, Equal } from 'lucide-react'
 import { Input } from '@/components/ui'
 import type { Conversion, FormulaExprToken, Material } from '@/types'
 import { uid } from '@/lib/utils'
+
+function normalizeSearch(s: string) {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
 
 /** Đơn vị sau quy đổi (toUnit) nếu có, không thì đơn vị vật liệu */
 export function unitAfterConversion(mat: Material, conversions: Conversion[]): string {
@@ -105,9 +113,15 @@ export function FormulaBuilder({
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragMaterialId, setDragMaterialId] = useState<string | null>(null)
 
+  const [matQuery, setMatQuery] = useState('')
   const pool = materials.filter(
     (m) => m.active && (!materialIds?.length || materialIds.includes(m.id)),
   )
+  const filteredPool = useMemo(() => {
+    const q = normalizeSearch(matQuery)
+    if (!q) return pool
+    return pool.filter((m) => normalizeSearch(`${m.name} ${m.description || ''} ${m.unit}`).includes(q))
+  }, [pool, matQuery])
 
   const addMaterialFromPool = (mat: Material) => {
     if (readOnly) return
@@ -158,10 +172,24 @@ export function FormulaBuilder({
     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
       <div className="rounded-2xl border border-line bg-surface/40 p-3">
         <p className="mb-2 text-sm font-semibold">Vật liệu</p>
-        <p className="mb-2 text-xs text-muted">Chạm hoặc kéo vào công thức →</p>
+        <p className="mb-2 text-xs text-muted">Gõ tìm → chạm hoặc kéo vào công thức</p>
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-2">
+          <Search size={14} className="shrink-0 text-muted" />
+          <input
+            type="search"
+            value={matQuery}
+            onChange={(e) => setMatQuery(e.target.value)}
+            placeholder="Gõ tên vật liệu…"
+            disabled={readOnly}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-muted/70 disabled:opacity-50"
+          />
+        </div>
         <div className="max-h-64 space-y-1.5 overflow-y-auto">
           {pool.length === 0 && <p className="text-sm text-muted">Chưa có vật liệu.</p>}
-          {pool.map((m) => {
+          {pool.length > 0 && filteredPool.length === 0 && (
+            <p className="text-sm text-muted">Không tìm thấy “{matQuery}”.</p>
+          )}
+          {filteredPool.map((m) => {
             const unit = unitAfterConversion(m, conversions)
             return (
               <button
@@ -180,6 +208,9 @@ export function FormulaBuilder({
             )
           })}
         </div>
+        {pool.length > 8 && (
+          <p className="mt-2 text-[11px] text-muted">{filteredPool.length}/{pool.length} vật liệu</p>
+        )}
       </div>
 
       <div className="rounded-2xl border border-dashed border-line bg-card p-3">

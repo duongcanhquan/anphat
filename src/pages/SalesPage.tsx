@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, Lock, Search, Pencil } from 'lucide-react'
+import { Plus, Trash2, Lock, Pencil } from 'lucide-react'
 import { MoneyInput } from '@/components/MoneyInput'
 import { FormulaBuilder, stockDualUnits, toStockUnitQuantity } from '@/components/FormulaBuilder'
 import {
@@ -10,6 +10,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchableSelect,
   Select,
   Tabs,
   Textarea,
@@ -284,7 +285,6 @@ export function SalesPage() {
 
   const [lines, setLines] = useState<OrderLine[]>([emptyLine()])
   const [customerId, setCustomerId] = useState('')
-  const [customerSearch, setCustomerSearch] = useState('')
   const [payments, setPayments] = useState<OrderPayment[]>([])
   const [payAmount, setPayAmount] = useState(0)
   const [payNote, setPayNote] = useState('')
@@ -343,16 +343,36 @@ export function SalesPage() {
 
   const managers = users.filter((u) => u.active && (u.role === 'admin' || u.role === 'superadmin'))
   const activeFormulas = formulas.filter((f) => f.active)
-  const filteredCustomers = useMemo(() => {
-    const q = customerSearch.trim().toLowerCase()
-    if (!q) return customers
-    return customers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.taxCode.toLowerCase().includes(q) ||
-        c.phone.toLowerCase().includes(q),
-    )
-  }, [customers, customerSearch])
+  const customerOptions = useMemo(
+    () =>
+      customers.map((c) => ({
+        value: c.id,
+        label: c.name,
+        searchText: `${c.taxCode || ''} ${c.phone || ''} ${c.address || ''}`,
+        hint: [c.taxCode && `MST ${c.taxCode}`, c.phone].filter(Boolean).join(' · ') || undefined,
+      })),
+    [customers],
+  )
+  const productOptions = useMemo(
+    () =>
+      activeFormulas.map((f) => ({
+        value: f.id,
+        label: f.name,
+        searchText: `${f.description || ''} ${f.unit}`,
+        hint: f.unit,
+      })),
+    [activeFormulas],
+  )
+  const managerOptions = useMemo(
+    () =>
+      managers.map((u) => ({
+        value: u.id,
+        label: u.displayName,
+        searchText: `${u.email || ''} ${u.role}`,
+        hint: u.role,
+      })),
+    [managers],
+  )
 
   const totalAmount = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines])
   /** Tiền đang nhập chưa bấm ghi nhận — vẫn tính vào trạng thái khi lưu */
@@ -904,43 +924,29 @@ export function SalesPage() {
             )}
 
             <Bento title="Khách hàng">
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-                <div className="min-w-0 flex-1">
-                  <Input
-                    label="Tìm khách hàng"
-                    value={customerSearch}
-                    onChange={(e) => setCustomerSearch(e.target.value)}
-                    placeholder="Tên, MST, SĐT…"
-                    disabled={!writable}
-                  />
-                </div>
-                <div className="flex items-end sm:shrink-0">
-                  <Button type="button" variant="outline" className="h-[42px] w-full sm:w-auto" disabled={!writable}>
-                    <Search size={16} /> Search
-                  </Button>
-                </div>
-              </div>
-              <Select label="Chọn khách" value={customerId} onChange={(e) => setCustomerId(e.target.value)} disabled={!writable}>
-                <option value="">— Chọn khách hàng —</option>
-                {filteredCustomers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} {c.taxCode ? `(${c.taxCode})` : ''}</option>
-                ))}
-              </Select>
+              <SearchableSelect
+                label="Chọn khách hàng"
+                value={customerId}
+                onChange={setCustomerId}
+                options={customerOptions}
+                placeholder="— Chọn khách hàng —"
+                searchPlaceholder="Gõ tên, MST, SĐT…"
+                disabled={!writable}
+                required
+              />
             </Bento>
 
             <Bento title="Người phụ trách">
-              <Select
+              <SearchableSelect
                 label="Chọn Admin / Superadmin"
                 value={assignedTo}
+                onChange={setAssignedTo}
+                options={managerOptions}
+                placeholder="— Chọn người phụ trách —"
+                searchPlaceholder="Gõ tên…"
                 disabled={!writable}
-                onChange={(e) => setAssignedTo(e.target.value)}
-              >
-                {managers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.displayName} ({u.role})
-                  </option>
-                ))}
-              </Select>
+                allowClear={false}
+              />
             </Bento>
 
             {lines.map((line, idx) => (
@@ -957,12 +963,15 @@ export function SalesPage() {
                 }
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Select label="Sản phẩm" value={line.formulaId} disabled={!writable} onChange={(e) => pickFormula(line.id, e.target.value)}>
-                    <option value="">— Chọn sản phẩm —</option>
-                    {activeFormulas.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name} ({f.unit})</option>
-                    ))}
-                  </Select>
+                  <SearchableSelect
+                    label="Sản phẩm"
+                    value={line.formulaId}
+                    disabled={!writable}
+                    onChange={(v) => pickFormula(line.id, v)}
+                    options={productOptions}
+                    placeholder="— Chọn sản phẩm —"
+                    searchPlaceholder="Gõ tên sản phẩm…"
+                  />
                   {line.recipeLabel && (
                     <div>
                       <p className="mb-1 text-xs font-medium text-muted">Công thức</p>

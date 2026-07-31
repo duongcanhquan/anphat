@@ -10,6 +10,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchableSelect,
   Select,
   Tabs,
   Textarea,
@@ -581,12 +582,22 @@ function ConversionsTab({
 
       <Modal open={open} onClose={() => setOpen(false)} title={edit ? 'Sửa quy đổi' : 'Thêm quy đổi'}>
         <form className="space-y-3" onSubmit={save}>
-          <Select label="Vật liệu" value={materialId} onChange={(e) => setMaterialId(e.target.value)} required>
-            <option value="">— Chọn —</option>
-            {materials.filter((m) => m.active).map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </Select>
+          <SearchableSelect
+            label="Vật liệu"
+            value={materialId}
+            onChange={setMaterialId}
+            options={materials
+              .filter((m) => m.active)
+              .map((m) => ({
+                value: m.id,
+                label: m.name,
+                searchText: `${m.description || ''} ${m.unit}`,
+                hint: m.unit,
+              }))}
+            placeholder="— Chọn vật liệu —"
+            searchPlaceholder="Gõ tên vật liệu…"
+            required
+          />
           <div className="grid grid-cols-2 gap-2">
             <Select label="Từ đơn vị" value={fromUnit} onChange={(e) => setFromUnit(e.target.value)}>
               {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}

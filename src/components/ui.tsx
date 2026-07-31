@@ -162,6 +162,8 @@ export function Select({
   )
 }
 
+export { SearchableSelect, type SearchableOption } from '@/components/SearchableSelect'
+
 export function Badge({
   children,
   tone = 'default',

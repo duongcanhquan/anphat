@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Plus, Trash2, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
-import { Bento, Badge, Button, Empty, Input, Modal, PageHeader, Select, Tabs, Textarea } from '@/components/ui'
+import { Bento, Badge, Button, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Tabs, Textarea } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   addStockEntry,
@@ -69,6 +69,16 @@ export function WarehousePage() {
 
   const active = materials.filter((m) => m.active)
   const unitOptions = allWeightUnits()
+  const materialOptions = useMemo(
+    () =>
+      active.map((m) => ({
+        value: m.id,
+        label: m.name,
+        searchText: `${m.description || ''} ${m.unit}`,
+        hint: m.unit,
+      })),
+    [active],
+  )
 
   const importSummary = useMemo(() => {
     const map = new Map<string, { id: string; name: string; unit: string; totalIn: number; totalOut: number; count: number }>()
@@ -274,14 +284,14 @@ export function WarehousePage() {
         <div className="space-y-3">
           <Bento title="Bộ lọc lịch sử">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <Select
+              <SearchableSelect
                 label="Vật liệu"
                 value={historyMat?.id || ''}
-                onChange={(e) => setHistoryMat(active.find((m) => m.id === e.target.value) || null)}
-              >
-                <option value="">— Tất cả —</option>
-                {active.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </Select>
+                onChange={(id) => setHistoryMat(active.find((m) => m.id === id) || null)}
+                options={materialOptions}
+                placeholder="— Tất cả vật liệu —"
+                searchPlaceholder="Gõ tên vật liệu…"
+              />
               <Select label="Loại" value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value as 'all' | 'import' | 'export')}>
                 <option value="all">Tất cả</option>
                 <option value="import">Chỉ nhập</option>
@@ -344,10 +354,15 @@ export function WarehousePage() {
                   )}
                 </div>
                 <div className="grid gap-2 sm:grid-cols-3">
-                  <Select label="Vật liệu" value={row.materialId} onChange={(e) => setRows((p) => p.map((r) => r.key === row.key ? { ...r, materialId: e.target.value } : r))} required>
-                    <option value="">— Chọn —</option>
-                    {active.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>)}
-                  </Select>
+                  <SearchableSelect
+                    label="Vật liệu"
+                    value={row.materialId}
+                    onChange={(id) => setRows((p) => p.map((r) => r.key === row.key ? { ...r, materialId: id } : r))}
+                    options={materialOptions}
+                    placeholder="— Chọn vật liệu —"
+                    searchPlaceholder="Gõ tên vật liệu…"
+                    required
+                  />
                   <Input label="Số lượng" type="number" step="any" min="0" value={row.quantity} onChange={(e) => setRows((p) => p.map((r) => r.key === row.key ? { ...r, quantity: e.target.value } : r))} required />
                   <Input label="Chi phí (vnđ)" type="number" step="any" min="0" value={row.cost} onChange={(e) => setRows((p) => p.map((r) => r.key === row.key ? { ...r, cost: e.target.value } : r))} />
                 </div>
