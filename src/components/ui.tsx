@@ -261,21 +261,39 @@ export function Tabs({
   value: string
   onChange: (id: string) => void
 }) {
+  /** Nhiều tab (Cài đặt…): lưới 2 cột trên mobile để chữ không bị chèn */
+  const many = tabs.length > 3
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2/80 p-1">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          onClick={() => onChange(t.id)}
-          className={cn(
-            'min-w-0 flex-1 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-semibold transition',
-            value === t.id ? 'bg-card text-ink shadow-sm' : 'text-muted hover:text-ink',
-          )}
-        >
-          {t.label}
-        </button>
-      ))}
+    <div
+      className={cn(
+        'mb-4',
+        many
+          ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap'
+          : 'flex flex-wrap gap-2',
+      )}
+      role="tablist"
+    >
+      {tabs.map((t) => {
+        const active = value === t.id
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.id)}
+            className={cn(
+              'rounded-xl border px-3 py-2.5 text-center text-sm font-semibold leading-snug transition active:scale-[0.98]',
+              many ? 'w-full lg:w-auto lg:min-w-[7.5rem]' : 'min-w-[5.5rem] flex-1 sm:flex-none',
+              active
+                ? 'border-accent bg-accent text-white shadow-sm'
+                : 'border-line bg-card text-ink hover:bg-surface-2',
+            )}
+          >
+            <span className="block break-words">{t.label}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

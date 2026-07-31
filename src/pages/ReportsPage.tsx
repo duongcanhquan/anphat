@@ -87,7 +87,7 @@ export function ReportsPage() {
 
       {tab === 'ky' && (
         <>
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 grid grid-cols-4 gap-2">
             {([
               ['day', 'Ngày'],
               ['week', 'Tuần'],
@@ -98,6 +98,7 @@ export function ReportsPage() {
                 key={id}
                 size="sm"
                 variant={period === id ? 'primary' : 'outline'}
+                className="w-full px-1"
                 onClick={() => setPeriod(id)}
               >
                 {label}

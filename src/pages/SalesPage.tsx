@@ -1165,7 +1165,7 @@ export function SalesPage() {
 
                 <div>
                   <p className="mb-2 text-xs font-medium text-muted">Trạng thái (theo tiền đã thanh toán)</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {ORDER_STATUS_CORE.map((s) => (
                       <button
                         key={s}
@@ -1176,10 +1176,10 @@ export function SalesPage() {
                           else setOrderStatusOverride(null)
                         }}
                         className={cn(
-                          'rounded-lg px-3 py-1.5 text-sm font-semibold',
+                          'rounded-xl border border-transparent px-2 py-2 text-center text-sm font-semibold leading-snug',
                           ORDER_STATUS_COLORS[s].bg,
                           ORDER_STATUS_COLORS[s].text,
-                          orderStatus === s ? 'ring-2 ring-ink/30' : 'opacity-70',
+                          orderStatus === s ? 'ring-2 ring-ink/30' : 'opacity-80',
                         )}
                       >
                         {ORDER_STATUS_LABELS[s]}
@@ -1390,7 +1390,7 @@ export function SalesPage() {
             {writable && (
               <div className="grid gap-2">
                 <p className="text-xs font-medium text-muted">Đổi trạng thái thủ công</p>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {ORDER_STATUS_CORE.map((s) => (
                     <button
                       key={s}
@@ -1398,7 +1398,7 @@ export function SalesPage() {
                       disabled={detailOrder.locked && !canUnlockOrder(profile?.role)}
                       onClick={() => changeOrderStatus(detailOrder, s)}
                       className={cn(
-                        'rounded-lg px-3 py-1.5 text-sm font-semibold',
+                        'rounded-xl border border-transparent px-2 py-2 text-center text-sm font-semibold leading-snug',
                         ORDER_STATUS_COLORS[s].bg,
                         ORDER_STATUS_COLORS[s].text,
                         resolveOrderStatus(detailOrder) === s ? 'ring-2 ring-ink/30' : 'opacity-80',

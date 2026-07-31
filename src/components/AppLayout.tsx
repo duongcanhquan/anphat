@@ -16,11 +16,11 @@ import { cn } from '@/lib/utils'
 import { Badge, Button } from './ui'
 
 const nav = [
-  { to: '/', label: 'Tổng quan', icon: LayoutDashboard, end: true },
-  { to: '/ban-hang', label: 'Bán hàng', icon: ShoppingCart },
-  { to: '/kho', label: 'Kho', icon: Warehouse },
-  { to: '/tong-ket', label: 'Tổng kết', icon: BarChart3 },
-  { to: '/cai-dat', label: 'Cài đặt', icon: Settings },
+  { to: '/', label: 'Tổng quan', short: 'Tổng quan', icon: LayoutDashboard, end: true },
+  { to: '/ban-hang', label: 'Bán hàng', short: 'Bán hàng', icon: ShoppingCart },
+  { to: '/kho', label: 'Kho', short: 'Kho', icon: Warehouse },
+  { to: '/tong-ket', label: 'Tổng kết', short: 'Tổng kết', icon: BarChart3 },
+  { to: '/cai-dat', label: 'Cài đặt', short: 'Cài đặt', icon: Settings },
 ]
 
 const roleLabel = {
@@ -138,7 +138,7 @@ export function AppLayout() {
         </main>
 
         {/* Mobile / iPad portrait bottom nav — pinned to viewport bottom via flex */}
-        <nav className="sticky bottom-0 z-40 grid shrink-0 grid-cols-5 gap-0.5 border-t border-line/70 bg-card/95 px-1 py-1.5 backdrop-blur safe-bottom sm:gap-1 sm:px-2 sm:py-2 lg:hidden">
+        <nav className="sticky bottom-0 z-40 grid shrink-0 grid-cols-5 gap-1 border-t border-line/70 bg-card/95 px-1.5 py-1.5 backdrop-blur safe-bottom sm:px-2 sm:py-2 lg:hidden">
           {nav.map((item) => (
             <NavLink
               key={item.to}
@@ -146,13 +146,15 @@ export function AppLayout() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  'flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1.5 text-[10px] font-semibold leading-none sm:gap-1 sm:py-2 sm:text-[11px]',
+                  'flex min-h-[3.25rem] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1.5 text-[10px] font-semibold leading-tight sm:min-h-0 sm:text-[11px]',
                   isActive ? 'bg-accent-soft text-accent' : 'text-muted',
                 )
               }
             >
               <item.icon size={18} className="shrink-0" />
-              <span className="w-full truncate text-center">{item.label}</span>
+              <span className="line-clamp-2 w-full px-0.5 text-center hyphens-none">
+                {item.short}
+              </span>
             </NavLink>
           ))}
         </nav>
