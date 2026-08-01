@@ -1,7 +1,7 @@
 import { useMemo, useState, type DragEvent } from 'react'
 import { GripVertical, Search, X, Equal } from 'lucide-react'
 import { Input } from '@/components/ui'
-import type { Conversion, FormulaExprToken, Material } from '@/types'
+import type { Conversion, FormulaExprToken, FormulaItem, Material } from '@/types'
 import { uid } from '@/lib/utils'
 
 function normalizeSearch(s: string) {
@@ -72,6 +72,37 @@ export function stockDualUnits(
     }
   }
   return { inputQty, inputUnit, convertedQty: null, convertedUnit: null, factor: null }
+}
+
+/**
+ * Chuẩn hoá một dòng vật liệu về đơn vị ưu tiên:
+ * - Có quy đổi → dùng đơn vị sau quy đổi (toUnit), số lượng được đổi theo factor
+ * - Không có quy đổi → giữ đơn vị nhập kho của vật liệu
+ */
+export function toPreferredUnitItem(
+  item: FormulaItem,
+  materials: Material[],
+  conversions: Conversion[],
+): FormulaItem {
+  const mat = materials.find((m) => m.id === item.materialId)
+  if (!mat) return item
+  const preferred = unitAfterConversion(mat, conversions)
+  if (!item.unit) return { ...item, unit: preferred }
+  if (item.unit === preferred) return item
+  const c = getMaterialConversion(mat, conversions)
+  if (!c || !(c.factor > 0)) {
+    // Không có quy đổi và không đổi được số lượng — giữ nguyên để không làm sai
+    return item
+  }
+  // 1 fromUnit = factor toUnit
+  if (item.unit === c.fromUnit && preferred === c.toUnit) {
+    return { ...item, unit: preferred, quantityPerUnit: item.quantityPerUnit * c.factor }
+  }
+  if (item.unit === c.toUnit && preferred === c.fromUnit) {
+    return { ...item, unit: preferred, quantityPerUnit: item.quantityPerUnit / c.factor }
+  }
+  // Đơn vị lạ không quy đổi được — giữ nguyên để không làm sai số lượng
+  return item
 }
 
 /** Đổi số lượng từ đơn vị quy đổi (hoặc bất kỳ) về đơn vị tồn kho để trừ kho */

@@ -12,7 +12,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge, Bento, Button, Empty, PageHeader, StatBig, Tabs } from '@/components/ui'
 import { watchCustomers, watchMaterials, watchOrders, watchPayments } from '@/lib/store'
 import type { Customer, DebtPayment, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal, resolveOrderStatus } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, normalizeUnit, orderPaidTotal, resolveOrderStatus } from '@/types'
 import {
   formatDateTime,
   formatMoney,
@@ -175,7 +175,7 @@ export function ReportsPage() {
                             <div key={l.id} className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-sm">
                               <span className="min-w-0 break-words">{l.formulaName || 'Sản phẩm'}</span>
                               <span className="num shrink-0 font-semibold text-muted">
-                                × {formatNumber(l.quantity)} {l.unit}
+                                × {formatNumber(l.quantity)} {normalizeUnit(l.unit)}
                               </span>
                             </div>
                           ))

@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Plus, Star, Trash2 } from 'lucide-react'
-import { FormulaBuilder } from '@/components/FormulaBuilder'
+import { FormulaBuilder, toPreferredUnitItem } from '@/components/FormulaBuilder'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Badge, Bento, Button, Empty, Input, Modal, Select } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { createAuditLog, createFormula, deleteFormula, updateFormula } from '@/lib/store'
 import type { Conversion, Formula, FormulaExprToken, Material, ProductRecipe, WeightUnit } from '@/types'
-import { getDefaultRecipe, getProductRecipes, itemsFromExpression } from '@/types'
+import { getDefaultRecipe, getProductRecipes, itemsFromExpression, normalizeUnit } from '@/types'
 import { formatMoney, formatNumber, uid } from '@/lib/utils'
 
 export function ProductsTab({
@@ -69,12 +69,28 @@ export function ProductsTab({
   const openEditProduct = (f: Formula) => {
     const list = getProductRecipes(f).map((r) => ({
       ...r,
-      expression: r.expression.filter((t) => t.kind === 'material').map((t) => ({ ...t })),
+      // Hiển thị theo đơn vị sau quy đổi hiện hành (không có quy đổi → đơn vị nhập kho)
+      expression: r.expression
+        .filter((t) => t.kind === 'material')
+        .map((t) => {
+          if (t.kind !== 'material') return { ...t }
+          const norm = toPreferredUnitItem(
+            {
+              materialId: t.materialId,
+              materialName: t.materialName,
+              quantityPerUnit: t.quantityPerUnit,
+              unit: t.unit,
+            },
+            materials,
+            conversions,
+          )
+          return { ...t, quantityPerUnit: norm.quantityPerUnit, unit: norm.unit }
+        }),
     }))
     setEdit(f)
     setName(f.name)
     setDescription(f.description)
-    setUnit(f.unit)
+    setUnit(normalizeUnit(f.unit))
     setUnitPrice(f.unitPrice)
     setRecipes(list)
     setActiveRecipeId(f.defaultRecipeId || list.find((r) => r.isDefault)?.id || list[0]?.id || '')
@@ -174,7 +190,7 @@ export function ProductsTab({
           const recipesList = getProductRecipes(f)
           const def = getDefaultRecipe(f)
           return (
-            <Bento key={f.id} title={`${f.name}${f.description ? ` — ${f.description}` : ''}`} subtitle={`${formatMoney(f.unitPrice)} / ${f.unit}`}>
+            <Bento key={f.id} title={`${f.name}${f.description ? ` — ${f.description}` : ''}`} subtitle={`${formatMoney(f.unitPrice)} / ${normalizeUnit(f.unit)}`}>
               <div className="flex flex-wrap gap-1">
                 {recipesList.map((r) => (
                   <Badge key={r.id} tone={r.id === def.id ? 'accent' : 'ok'}>
@@ -184,12 +200,14 @@ export function ProductsTab({
                 ))}
               </div>
               <div className="mt-2 space-y-1">
-                {def.items.map((i) => (
-                  <div key={i.materialId} className="flex justify-between text-sm">
-                    <span>{i.materialName}</span>
-                    <span className="num font-semibold">{formatNumber(i.quantityPerUnit)} {i.unit}</span>
-                  </div>
-                ))}
+                {def.items
+                  .map((i) => toPreferredUnitItem(i, materials, conversions))
+                  .map((i) => (
+                    <div key={i.materialId} className="flex justify-between text-sm">
+                      <span>{i.materialName}</span>
+                      <span className="num font-semibold">{formatNumber(i.quantityPerUnit)} {i.unit}</span>
+                    </div>
+                  ))}
               </div>
               {writable && (
                 <div className="mt-3 flex gap-2">
@@ -231,7 +249,10 @@ export function ProductsTab({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Select label="Đơn vị sản phẩm" value={unit} onChange={(e) => setUnit(e.target.value)}>
-              {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+              {/* Giữ cả đơn vị hiện tại nếu không nằm trong danh sách để không hiển thị sai */}
+              {[...new Set([...unitOptions, ...(unit ? [unit] : [])])].map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
             </Select>
             <MoneyInput label="Đơn giá mặc định" value={unitPrice} onChange={setUnitPrice} disabled={!writable} />
           </div>

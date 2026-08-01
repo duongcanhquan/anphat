@@ -7,10 +7,11 @@ import {
   updateMaterial,
   watchConversions,
   watchMaterials,
+  watchSettings,
   watchStockEntries,
   watchUsers,
 } from '@/lib/store'
-import type { Conversion, Material, StockEntry, WeightUnit } from '@/types'
+import type { CompanySettings, Conversion, Material, StockEntry, WeightUnit } from '@/types'
 import { allWeightUnits, canWrite } from '@/types'
 import { stockDualUnits } from '@/components/FormulaBuilder'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
@@ -34,6 +35,7 @@ export function WarehousePage() {
   const [tab, setTab] = useState<WarehouseTab>('kho')
   const [materials, setMaterials] = useState<Material[]>([])
   const [conversions, setConversions] = useState<Conversion[]>([])
+  const [settings, setSettings] = useState<CompanySettings | null>(null)
   const [entries, setEntries] = useState<StockEntry[]>([])
   const [userNames, setUserNames] = useState<Record<string, string>>({})
   const [open, setOpen] = useState(false)
@@ -64,11 +66,12 @@ export function WarehousePage() {
       setUserNames(map)
     })
     const u4 = watchConversions(setConversions)
-    return () => { u1(); u2(); u3(); u4() }
+    const u5 = watchSettings(setSettings)
+    return () => { u1(); u2(); u3(); u4(); u5() }
   }, [])
 
   const active = materials.filter((m) => m.active)
-  const unitOptions = allWeightUnits()
+  const unitOptions = allWeightUnits(settings?.customUnits || [])
   const materialOptions = useMemo(
     () =>
       active.map((m) => ({

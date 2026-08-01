@@ -180,6 +180,9 @@ export interface ProductRecipe {
   items: FormulaItem[]
   createdAt: number
   createdBy?: string
+  /** Công thức riêng cho một khách hàng — tự áp dụng khi tạo đơn cho khách đó */
+  customerId?: string
+  customerName?: string
 }
 
 export interface Formula {
@@ -473,7 +476,18 @@ export function getProductRecipes(f: Formula): ProductRecipe[] {
 
 export function getDefaultRecipe(f: Formula): ProductRecipe {
   const recipes = getProductRecipes(f)
-  return recipes.find((r) => r.id === f.defaultRecipeId) || recipes.find((r) => r.isDefault) || recipes[0]
+  return (
+    recipes.find((r) => r.id === f.defaultRecipeId && !r.customerId) ||
+    recipes.find((r) => r.isDefault && !r.customerId) ||
+    recipes.find((r) => !r.customerId) ||
+    recipes[0]
+  )
+}
+
+/** Công thức riêng đã lưu cho một khách hàng (nếu có) */
+export function getCustomerRecipe(f: Formula, customerId: string | undefined | null): ProductRecipe | undefined {
+  if (!customerId) return undefined
+  return getProductRecipes(f).find((r) => r.customerId === customerId)
 }
 
 export function recipeItems(recipe: ProductRecipe): FormulaItem[] {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Lock, Pencil } from 'lucide-react'
 import { MoneyInput } from '@/components/MoneyInput'
-import { FormulaBuilder, stockDualUnits, toStockUnitQuantity } from '@/components/FormulaBuilder'
+import { FormulaBuilder, stockDualUnits, toPreferredUnitItem, toStockUnitQuantity } from '@/components/FormulaBuilder'
 import {
   Badge,
   Bento,
@@ -23,6 +23,7 @@ import {
   generateOrderCode,
   getSettings,
   updateCustomer,
+  updateFormula,
   updateOrder,
   watchCustomers,
   watchConversions,
@@ -36,6 +37,7 @@ import type {
   Conversion,
   Customer,
   Formula,
+  FormulaExprToken,
   FormulaItem,
   Material,
   Order,
@@ -53,10 +55,12 @@ import {
   canUnlockOrder,
   canWrite,
   extraMoneyValue,
+  getCustomerRecipe,
   getDefaultRecipe,
   getProductRecipes,
   itemsFromExpression,
   normalizeOrderStatus,
+  normalizeUnit,
   orderPaidTotal,
   orderPaymentsList,
   recipeItems,
@@ -78,7 +82,8 @@ function emptyLine(f?: Formula, recipe?: ProductRecipe): OrderLine {
     formulaId: f?.id || '',
     formulaName: f?.name || '',
     quantity: 1,
-    unit: f?.unit || 'Tấn',
+    // Đơn vị luôn theo đơn vị sản phẩm đã cài đặt — chưa chọn sản phẩm thì để trống
+    unit: f?.unit ? normalizeUnit(f.unit) : '',
     unitPrice: f?.unitPrice || 0,
     items,
     recipeId: recipe?.id,
@@ -296,7 +301,18 @@ export function SalesPage() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [recipePick, setRecipePick] = useState<{ lineId: string; formula: Formula } | null>(null)
-  const [ratioModal, setRatioModal] = useState<{ lineId: string; items: FormulaItem[]; materialIds: string[] } | null>(null)
+  const [ratioModal, setRatioModal] = useState<{
+    lineId: string
+    items: FormulaItem[]
+    originalItems: FormulaItem[]
+    materialIds: string[]
+  } | null>(null)
+  const [saveRecipeAsk, setSaveRecipeAsk] = useState<{
+    lineId: string
+    formulaId: string
+    items: FormulaItem[]
+  } | null>(null)
+  const [savingRecipe, setSavingRecipe] = useState(false)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [detailPayAmount, setDetailPayAmount] = useState(0)
@@ -358,8 +374,8 @@ export function SalesPage() {
       activeFormulas.map((f) => ({
         value: f.id,
         label: f.name,
-        searchText: `${f.description || ''} ${f.unit}`,
-        hint: f.unit,
+        searchText: `${f.description || ''} ${normalizeUnit(f.unit)}`,
+        hint: normalizeUnit(f.unit),
       })),
     [activeFormulas],
   )
@@ -443,9 +459,48 @@ export function SalesPage() {
         stockAvailable: dual?.inputQty ?? null,
         convertedAvailable: dual?.convertedQty ?? null,
         convertedUnit: dual?.convertedUnit ?? null,
+        /** Vật liệu không còn trong kho hoặc tồn không đủ để trừ */
+        missing: mat == null,
+        shortage: mat == null ? stockQty : Math.max(0, stockQty - mat.stock),
       }
     })
   }, [lines, materials, conversions])
+
+  /** Các vật liệu kho không đủ cho đơn đang tạo */
+  const stockShortages = useMemo(
+    () => materialNeed.filter((m) => m.qty > 0 && (m.missing || m.shortage > 0.000001)),
+    [materialNeed],
+  )
+
+  const shortageText = (list: typeof stockShortages) =>
+    list
+      .map((m) =>
+        m.missing
+          ? `${m.name} (không còn trong kho)`
+          : `${m.name} thiếu ${formatNumber(m.shortage)} ${m.stockUnit}`,
+      )
+      .join(', ')
+
+  /** Kiểm tra thiếu kho cho danh sách trừ kho của một đơn đã lưu */
+  const shortagesForDeduct = (
+    items: { materialId: string; materialName: string; unit: string; quantity: number }[],
+  ): string[] => {
+    const agg = new Map<string, { name: string; unit: string; qty: number }>()
+    for (const it of items) {
+      const cur = agg.get(it.materialId) || { name: it.materialName, unit: it.unit, qty: 0 }
+      cur.qty += it.quantity
+      agg.set(it.materialId, cur)
+    }
+    const out: string[] = []
+    for (const [id, v] of agg) {
+      if (!(v.qty > 0)) continue
+      const mat = materials.find((m) => m.id === id)
+      if (!mat) out.push(`${v.name} (không còn trong kho)`)
+      else if (v.qty > mat.stock + 0.000001)
+        out.push(`${mat.name} thiếu ${formatNumber(v.qty - mat.stock)} ${mat.unit}`)
+    }
+    return out
+  }
 
   const updateLine = (id: string, patch: Partial<OrderLine>) => {
     setLines((prev) =>
@@ -458,12 +513,19 @@ export function SalesPage() {
     )
   }
 
+  /** Đơn vị chuẩn của dòng — luôn lấy theo đơn vị sản phẩm đang cài đặt */
+  const lineUnit = (line: OrderLine): string => {
+    const f = formulas.find((x) => x.id === line.formulaId)
+    return normalizeUnit(f?.unit || line.unit || '')
+  }
+
   const applyRecipe = (lineId: string, f: Formula, recipe: ProductRecipe) => {
-    const items = recipeItems(recipe).map((i) => ({ ...i }))
+    // Ưu tiên đơn vị sau quy đổi; không có quy đổi thì dùng đơn vị nhập kho
+    const items = recipeItems(recipe).map((i) => toPreferredUnitItem({ ...i }, materials, conversions))
     updateLine(lineId, {
       formulaId: f.id,
       formulaName: f.name,
-      unit: f.unit,
+      unit: normalizeUnit(f.unit),
       unitPrice: f.unitPrice,
       items,
       recipeId: recipe.id,
@@ -474,12 +536,78 @@ export function SalesPage() {
   const pickFormula = (lineId: string, formulaId: string) => {
     const f = formulas.find((x) => x.id === formulaId)
     if (!f) return
-    const recipes = getProductRecipes(f)
-    if (recipes.length > 1) {
+    // Có công thức riêng đã lưu cho khách này → tự áp dụng
+    const custRecipe = getCustomerRecipe(f, customerId)
+    if (custRecipe) {
+      applyRecipe(lineId, f, custRecipe)
+      setMessage(`Đã áp dụng công thức riêng của khách hàng cho "${f.name}".`)
+      return
+    }
+    const general = getProductRecipes(f).filter((r) => !r.customerId)
+    if (general.length > 1) {
       setRecipePick({ lineId, formula: f })
       return
     }
-    applyRecipe(lineId, f, getDefaultRecipe(f))
+    applyRecipe(lineId, f, general[0] || getDefaultRecipe(f))
+  }
+
+  /** Lưu công thức vừa chỉnh làm công thức riêng cho khách hàng hiện tại */
+  const saveCustomerRecipe = async () => {
+    if (!saveRecipeAsk || !profile) return
+    const f = formulas.find((x) => x.id === saveRecipeAsk.formulaId)
+    const cust = customers.find((c) => c.id === customerId)
+    if (!f || !cust) {
+      setSaveRecipeAsk(null)
+      return
+    }
+    setSavingRecipe(true)
+    try {
+      const all = getProductRecipes(f)
+      const existing = all.find((r) => r.customerId === cust.id)
+      const expression: FormulaExprToken[] = saveRecipeAsk.items.map((i) => ({
+        id: `mat-${i.materialId}`,
+        kind: 'material' as const,
+        materialId: i.materialId,
+        materialName: i.materialName,
+        quantityPerUnit: i.quantityPerUnit,
+        unit: i.unit,
+      }))
+      const recipe: ProductRecipe = {
+        id: existing?.id || uid(),
+        label: `KH: ${cust.name}`,
+        isDefault: false,
+        expression,
+        items: saveRecipeAsk.items.map((i) => ({ ...i })),
+        createdAt: existing?.createdAt || Date.now(),
+        createdBy: profile.id,
+        customerId: cust.id,
+        customerName: cust.name,
+      }
+      const next = existing
+        ? all.map((r) => (r.customerId === cust.id ? recipe : r))
+        : [...all, recipe]
+      await updateFormula(f.id, {
+        recipes: next,
+        defaultRecipeId: f.defaultRecipeId || next.find((r) => r.isDefault)?.id || next[0].id,
+      })
+      updateLine(saveRecipeAsk.lineId, { recipeId: recipe.id, recipeLabel: recipe.label })
+      await createAuditLog({
+        entityType: 'formula',
+        entityId: f.id,
+        entityLabel: f.name,
+        action: 'update',
+        summary: `Lưu công thức riêng cho khách "${cust.name}" — sản phẩm "${f.name}"`,
+        userId: profile.id,
+        userName: profile.displayName,
+        createdAt: Date.now(),
+      })
+      setMessage(`Đã lưu công thức riêng cho ${cust.name}. Lần sau tạo đơn sẽ tự áp dụng.`)
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Lỗi lưu công thức riêng')
+    } finally {
+      setSavingRecipe(false)
+      setSaveRecipeAsk(null)
+    }
   }
 
   const resetDraft = () => {
@@ -502,7 +630,14 @@ export function SalesPage() {
       return
     }
     setEditingOrder(order)
-    setLines(order.lines.map((l) => ({ ...l, extras: l.extras.map((e) => ({ ...e })) })))
+    setLines(
+      order.lines.map((l) => ({
+        ...l,
+        // Đồng bộ vật liệu về đơn vị sau quy đổi hiện hành (không có quy đổi → đơn vị nhập)
+        items: l.items.map((i) => toPreferredUnitItem({ ...i }, materials, conversions)),
+        extras: l.extras.map((e) => ({ ...e })),
+      })),
+    )
     setCustomerId(order.customerId || '')
     setPayments(orderPaymentsList(order).map((p) => ({ ...p })))
     setContractAmount(order.contractAmount || order.totalAmount || 0)
@@ -570,13 +705,24 @@ export function SalesPage() {
 
       const shouldDeduct =
         status !== 'draft' && status !== 'huy' && !(editingOrder?.stockDeducted)
+
+      // Chặn chốt đơn khi kho không đủ nguyên liệu (đơn sẽ trừ kho)
+      if (shouldDeduct && stockShortages.length > 0) {
+        setMessage(
+          `Không thể chốt đơn — kho không đủ nguyên liệu: ${shortageText(stockShortages)}. Hãy nhập kho trước, hoặc lưu Draft (chưa trừ kho).`,
+        )
+        setBusy(false)
+        return
+      }
+
       const finalContract = contractAmount > 0 ? contractAmount : totalAmount
 
       const orderPayload: Omit<Order, 'id'> = {
         code: orderCode,
         customerId: cust.id,
         customerName: cust.name,
-        lines: lines.map((l) => ({ ...l, status })),
+        // Đồng bộ lại đơn vị theo sản phẩm đang cài đặt trước khi lưu
+        lines: lines.map((l) => ({ ...l, unit: lineUnit(l), status })),
         deposit: 0,
         paidAmount: finalPaid,
         payments: finalPayments,
@@ -735,6 +881,11 @@ export function SalesPage() {
           }
         }),
       )
+      const lack = shortagesForDeduct(deductItems)
+      if (lack.length > 0) {
+        setMessage(`Không thể chuyển trạng thái — kho không đủ nguyên liệu: ${lack.join(', ')}. Hãy nhập kho trước.`)
+        return
+      }
       if (deductItems.length > 0) {
         await deductStock(deductItems, {
           orderId: order.id,
@@ -808,6 +959,14 @@ export function SalesPage() {
             }
           }),
         )
+        const lack = shortagesForDeduct(deductItems)
+        if (lack.length > 0) {
+          setMessage(
+            `Không thể ghi thanh toán — đơn sẽ trừ kho nhưng kho không đủ nguyên liệu: ${lack.join(', ')}. Hãy nhập kho trước.`,
+          )
+          setDetailPayBusy(false)
+          return
+        }
         if (deductItems.length > 0) {
           await deductStock(deductItems, {
             orderId: detailOrder.id,
@@ -877,6 +1036,13 @@ export function SalesPage() {
             }
           }),
         )
+        const lack = shortagesForDeduct(deductItems)
+        if (lack.length > 0) {
+          // Không tự trừ kho khi thiếu — chỉ mở chi tiết kèm cảnh báo
+          setDetailOrder(order)
+          setMessage(`Đơn ${order.code} có thanh toán nhưng kho không đủ nguyên liệu để trừ: ${lack.join(', ')}.`)
+          return
+        }
         if (deductItems.length > 0) {
           await deductStock(deductItems, {
             orderId: order.id,
@@ -953,7 +1119,7 @@ export function SalesPage() {
               <Bento
                 key={line.id}
                 title={`Sản phẩm ${idx + 1}`}
-                subtitle={line.unit ? `Đơn vị: ${line.unit}` : undefined}
+                subtitle={lineUnit(line) ? `Đơn vị: ${lineUnit(line)}` : undefined}
                 action={
                   lines.length > 1 && writable ? (
                     <Button variant="ghost" size="sm" onClick={() => setLines((p) => p.filter((l) => l.id !== line.id))}>
@@ -992,7 +1158,7 @@ export function SalesPage() {
                     </div>
                   )}
                   <Input
-                    label={`Số lượng (${line.unit || 'đơn vị'})`}
+                    label={`Số lượng (${lineUnit(line) || 'đơn vị'})`}
                     type="number"
                     step="any"
                     min="0"
@@ -1016,16 +1182,20 @@ export function SalesPage() {
                 {line.items.length > 0 && (
                   <div className="mt-3 rounded-2xl bg-surface/80 p-3">
                     <div className="mb-2 flex items-center justify-between">
-                      <p className="text-sm font-semibold">Vật liệu / 1 {line.unit}</p>
+                      <p className="text-sm font-semibold">Vật liệu / 1 {lineUnit(line)}</p>
                       {writable && (
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => {
                             const f = formulas.find((x) => x.id === line.formulaId)
+                            const normalized = line.items.map((i) =>
+                              toPreferredUnitItem({ ...i }, materials, conversions),
+                            )
                             setRatioModal({
                               lineId: line.id,
-                              items: line.items.map((i) => ({ ...i })),
+                              items: normalized,
+                              originalItems: normalized.map((i) => ({ ...i })),
                               materialIds: f?.materialIds || line.items.map((i) => i.materialId),
                             })
                           }}
@@ -1067,25 +1237,45 @@ export function SalesPage() {
                 <Empty text="Chọn sản phẩm để xem vật liệu." />
               ) : (
                 <div className="space-y-2">
-                  {materialNeed.map((m) => (
-                    <div key={m.id + m.unit} className="rounded-xl bg-surface px-3 py-2">
-                      <div className="flex justify-between gap-2">
-                        <span className="font-medium">{m.name}</span>
-                        <span className="num font-bold">
-                          {formatNumber(m.qty)} {m.unit}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted">
-                        Trừ kho: {formatNumber(m.stockQty)} {m.stockUnit}
-                        {m.stockAvailable != null && (
-                          <> · Tồn: {formatNumber(m.stockAvailable)} {m.stockUnit}</>
-                        )}
-                        {m.convertedAvailable != null && m.convertedUnit && (
-                          <> ({formatNumber(m.convertedAvailable)} {m.convertedUnit})</>
-                        )}
-                      </p>
+                  {stockShortages.length > 0 && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                      Kho không đủ nguyên liệu — không thể chốt đơn. Hãy nhập kho trước.
                     </div>
-                  ))}
+                  )}
+                  {materialNeed.map((m) => {
+                    const short = m.qty > 0 && (m.missing || m.shortage > 0.000001)
+                    return (
+                      <div
+                        key={m.id + m.unit}
+                        className={cn(
+                          'rounded-xl px-3 py-2',
+                          short ? 'border border-red-200 bg-red-50' : 'bg-surface',
+                        )}
+                      >
+                        <div className="flex justify-between gap-2">
+                          <span className="font-medium">{m.name}</span>
+                          <span className={cn('num font-bold', short && 'text-red-700')}>
+                            {formatNumber(m.qty)} {m.unit}
+                          </span>
+                        </div>
+                        <p className={cn('mt-1 text-xs', short ? 'text-red-700' : 'text-muted')}>
+                          Trừ kho: {formatNumber(m.stockQty)} {m.stockUnit}
+                          {m.stockAvailable != null && (
+                            <> · Tồn: {formatNumber(m.stockAvailable)} {m.stockUnit}</>
+                          )}
+                          {m.convertedAvailable != null && m.convertedUnit && (
+                            <> ({formatNumber(m.convertedAvailable)} {m.convertedUnit})</>
+                          )}
+                          {m.missing && <> · Vật liệu không còn trong kho</>}
+                          {!m.missing && m.shortage > 0.000001 && (
+                            <>
+                              {' '}· <strong>Thiếu {formatNumber(m.shortage)} {m.stockUnit}</strong>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </Bento>
@@ -1196,14 +1386,31 @@ export function SalesPage() {
 
             {writable && (
               <div className="grid gap-2">
-                <Button size="lg" disabled={busy} onClick={() => confirmOrder(false)}>
+                {stockShortages.length > 0 && !editingOrder?.stockDeducted && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <p className="font-semibold">Kho không đủ nguyên liệu — không thể chốt đơn.</p>
+                    <p className="mt-1 text-xs">
+                      {shortageText(stockShortages)}.{' '}
+                      {paidWithPending > 0
+                        ? 'Hãy nhập kho trước, hoặc bỏ thanh toán để lưu Draft.'
+                        : 'Hãy nhập kho trước, hoặc lưu Draft (chưa trừ kho).'}
+                    </p>
+                  </div>
+                )}
+                <Button
+                  size="lg"
+                  disabled={busy || (stockShortages.length > 0 && !editingOrder?.stockDeducted)}
+                  onClick={() => confirmOrder(false)}
+                >
                   {busy
                     ? 'Đang lưu…'
-                    : editingOrder
-                      ? `Lưu đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
-                      : paidWithPending > 0
-                        ? `Chốt đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
-                        : 'Chốt đơn hàng'}
+                    : stockShortages.length > 0 && !editingOrder?.stockDeducted
+                      ? 'Thiếu nguyên liệu — không thể chốt'
+                      : editingOrder
+                        ? `Lưu đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
+                        : paidWithPending > 0
+                          ? `Chốt đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
+                          : 'Chốt đơn hàng'}
                 </Button>
                 {paidWithPending <= 0 && (
                   <Button
@@ -1212,7 +1419,7 @@ export function SalesPage() {
                     disabled={busy}
                     onClick={() => void confirmOrder(true)}
                   >
-                    Lưu Draft (nháp — chưa có tiền)
+                    Lưu Draft (nháp — chưa trừ kho)
                   </Button>
                 )}
               </div>
@@ -1283,19 +1490,61 @@ export function SalesPage() {
       <Modal open={!!recipePick} onClose={() => setRecipePick(null)} title="Chọn công thức">
         {recipePick && (
           <div className="space-y-2">
-            {getProductRecipes(recipePick.formula).map((r) => (
-              <Button
-                key={r.id}
-                variant={r.isDefault ? 'primary' : 'outline'}
-                className="w-full justify-start"
-                onClick={() => {
-                  applyRecipe(recipePick.lineId, recipePick.formula, r)
-                  setRecipePick(null)
-                }}
-              >
-                {r.label} {r.isDefault && '(mặc định)'}
+            {getProductRecipes(recipePick.formula)
+              .filter((r) => !r.customerId || r.customerId === customerId)
+              .map((r) => (
+                <Button
+                  key={r.id}
+                  variant={r.isDefault ? 'primary' : 'outline'}
+                  className="w-full justify-start"
+                  onClick={() => {
+                    applyRecipe(recipePick.lineId, recipePick.formula, r)
+                    setRecipePick(null)
+                  }}
+                >
+                  {r.label} {r.isDefault && '(mặc định)'}
+                  {r.customerId && ' · riêng cho khách này'}
+                </Button>
+              ))}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!saveRecipeAsk}
+        onClose={() => setSaveRecipeAsk(null)}
+        title="Lưu công thức riêng cho khách hàng?"
+      >
+        {saveRecipeAsk && (
+          <div className="space-y-3">
+            <p className="text-sm">
+              Bạn vừa thay đổi công thức của sản phẩm{' '}
+              <strong>{formulas.find((f) => f.id === saveRecipeAsk.formulaId)?.name || ''}</strong>.
+              Lưu làm công thức riêng cho khách{' '}
+              <strong>{customers.find((c) => c.id === customerId)?.name || ''}</strong>?
+            </p>
+            <div className="rounded-xl bg-surface/80 p-3">
+              {saveRecipeAsk.items.map((i) => (
+                <div key={i.materialId} className="flex justify-between text-sm">
+                  <span>{i.materialName}</span>
+                  <span className="num font-semibold">
+                    {formatNumber(i.quantityPerUnit)} {i.unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted">
+              Nếu lưu, lần sau tạo đơn cho khách này với sản phẩm này sẽ tự áp dụng công thức riêng.
+              Công thức mặc định của sản phẩm không thay đổi.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button disabled={savingRecipe} onClick={() => void saveCustomerRecipe()}>
+                {savingRecipe ? 'Đang lưu…' : 'Lưu công thức riêng'}
               </Button>
-            ))}
+              <Button variant="outline" disabled={savingRecipe} onClick={() => setSaveRecipeAsk(null)}>
+                Không lưu — chỉ dùng cho đơn này
+              </Button>
+            </div>
           </div>
         )}
       </Modal>
@@ -1317,7 +1566,27 @@ export function SalesPage() {
               }))}
               onChange={(expr) => setRatioModal({ ...ratioModal, items: itemsFromExpression(expr) })}
             />
-            <Button className="w-full" onClick={() => { updateLine(ratioModal.lineId, { items: ratioModal.items }); setRatioModal(null) }}>
+            <Button
+              className="w-full"
+              onClick={() => {
+                const changed =
+                  JSON.stringify(ratioModal.items) !== JSON.stringify(ratioModal.originalItems)
+                const line = lines.find((l) => l.id === ratioModal.lineId)
+                updateLine(ratioModal.lineId, {
+                  items: ratioModal.items,
+                  ...(changed ? { recipeLabel: 'Tùy chỉnh cho đơn này' } : {}),
+                })
+                // Công thức đã thay đổi → hỏi có lưu riêng cho khách hàng không
+                if (changed && writable && customerId && line?.formulaId) {
+                  setSaveRecipeAsk({
+                    lineId: ratioModal.lineId,
+                    formulaId: line.formulaId,
+                    items: ratioModal.items.map((i) => ({ ...i })),
+                  })
+                }
+                setRatioModal(null)
+              }}
+            >
               Áp dụng cho đơn
             </Button>
           </div>
@@ -1382,7 +1651,7 @@ export function SalesPage() {
 
             {detailOrder.lines.map((l) => (
               <div key={l.id} className="rounded-2xl bg-surface px-3 py-3">
-                <p className="font-semibold">{l.formulaName} × {formatNumber(l.quantity)} {l.unit}</p>
+                <p className="font-semibold">{l.formulaName} × {formatNumber(l.quantity)} {normalizeUnit(l.unit)}</p>
                 {l.recipeLabel && <p className="text-xs text-muted">Công thức: {l.recipeLabel}</p>}
                 <p className="num text-sm">{formatMoney(l.lineTotal)}</p>
               </div>

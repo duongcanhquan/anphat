@@ -30,6 +30,7 @@ import {
   DEFAULT_SETTINGS,
   updateConversion,
   updateCustomer,
+  updateFormula,
   updateMaterial,
   watchConversions,
   watchCustomers,
@@ -148,6 +149,7 @@ export function SettingsPage() {
       {tab === 'vat-lieu' && (
         <MaterialsTab
           materials={materials}
+          formulas={formulas}
           unitOptions={unitOptions}
           customUnits={settings?.customUnits || []}
           writable={writable}
@@ -183,6 +185,7 @@ export function SettingsPage() {
 
 function MaterialsTab({
   materials,
+  formulas,
   unitOptions,
   customUnits,
   writable,
@@ -192,6 +195,7 @@ function MaterialsTab({
   onMsg,
 }: {
   materials: Material[]
+  formulas: Formula[]
   unitOptions: string[]
   customUnits: string[]
   writable: boolean
@@ -272,6 +276,10 @@ function MaterialsTab({
     // Cập nhật vật liệu đang dùng đơn vị cũ
     for (const m of materials.filter((x) => x.unit === from)) {
       await updateMaterial(m.id, { unit: to })
+    }
+    // Cập nhật cả sản phẩm đang dùng đơn vị cũ — giữ đồng bộ với phần tạo đơn hàng
+    for (const f of formulas.filter((x) => x.unit === from)) {
+      await updateFormula(f.id, { unit: to })
     }
     await createAuditLog({
       entityType: 'unit',
