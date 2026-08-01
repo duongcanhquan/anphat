@@ -85,7 +85,7 @@ export function ViewerHomePage() {
       <PageHeader title="Tổng quan" subtitle="Kiểm soát toàn hệ thống — chỉ xem" />
 
       {/* TIỀN — khối quan trọng nhất */}
-      <Bento className="bg-ink text-surface">
+      <Bento className="border-ink bg-ink text-surface shadow-none">
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-surface/90" />
           <p className="text-xs font-bold uppercase tracking-wider text-surface/90">Kiểm soát tiền (toàn bộ đơn, trừ đơn huỷ)</p>
