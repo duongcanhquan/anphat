@@ -61,7 +61,7 @@ export function AppLayout() {
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition',
-                  isActive ? 'bg-accent text-white' : 'text-surface/70 hover:bg-white/10 hover:text-surface',
+                  isActive ? 'bg-accent text-white' : 'text-surface/85 hover:bg-white/10 hover:text-surface',
                 )
               }
             >
@@ -73,7 +73,7 @@ export function AppLayout() {
         <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
           <div>
             <p className="break-words font-semibold">{profile?.displayName}</p>
-            <p className="break-all text-xs text-surface/60">{profile?.email}</p>
+            <p className="break-all text-xs text-surface/75">{profile?.email}</p>
             <div className="mt-2">
               <Badge tone="accent">{roleLabel[profile?.role || 'viewer']}</Badge>
             </div>
@@ -114,7 +114,7 @@ export function AppLayout() {
                     className={({ isActive }) =>
                       cn(
                         'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold',
-                        isActive ? 'bg-accent text-white' : 'text-surface/70',
+                        isActive ? 'bg-accent text-white' : 'text-surface/85',
                       )
                     }
                   >
@@ -126,7 +126,7 @@ export function AppLayout() {
               <div className="mt-auto space-y-3 pt-4">
                 <div>
                   <p className="break-words text-sm font-semibold">{profile?.displayName}</p>
-                  <p className="break-all text-xs text-surface/60">{profile?.email}</p>
+                  <p className="break-all text-xs text-surface/75">{profile?.email}</p>
                   <div className="mt-2">
                     <Badge tone="accent">{roleLabel[profile?.role || 'viewer']}</Badge>
                   </div>

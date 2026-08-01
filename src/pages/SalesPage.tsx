@@ -1287,13 +1287,13 @@ export function SalesPage() {
                   <p className="num text-2xl font-extrabold text-accent">{formatMoney(totalAmount)}</p>
                 </div>
                 <div className="rounded-xl bg-ink px-3 py-3 text-surface">
-                  <p className="text-xs uppercase tracking-wider opacity-70">Đã thanh toán (cọc + các đợt)</p>
-                  <p className="num text-2xl font-extrabold">{formatMoney(paidWithPending)}</p>
-                  <p className="mt-1 text-sm opacity-80">
-                    Công nợ: <strong className="num">{formatMoney(debt)}</strong>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-surface/90">Đã thanh toán (cọc + các đợt)</p>
+                  <p className="num text-2xl font-extrabold text-white">{formatMoney(paidWithPending)}</p>
+                  <p className="mt-1 text-sm text-surface/90">
+                    Công nợ: <strong className="num text-amber-300">{formatMoney(debt)}</strong>
                   </p>
                   {pendingPay > 0 && (
-                    <p className="mt-1 text-xs opacity-70">
+                    <p className="mt-1 text-xs text-surface/90">
                       Đang nhập +{formatMoney(pendingPay)} — sẽ tự ghi nhận khi lưu đơn
                     </p>
                   )}

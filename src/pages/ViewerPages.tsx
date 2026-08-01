@@ -39,11 +39,11 @@ function OrderStatusBadge({ order }: { order: Order }) {
   return <Badge tone={STATUS_TONE[s]}>{ORDER_STATUS_LABELS[s]}</Badge>
 }
 
-/** Số tiền lớn, rõ ràng cho điện thoại */
+/** Số tiền lớn, rõ ràng cho điện thoại — dùng trong khối nền tối */
 function MoneyRow({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span className="text-sm text-muted">{label}</span>
+      <span className="text-sm text-surface/85">{label}</span>
       <span className={cn('num text-lg font-extrabold', tone)}>{formatMoney(value)}</span>
     </div>
   )
@@ -87,18 +87,18 @@ export function ViewerHomePage() {
       {/* TIỀN — khối quan trọng nhất */}
       <Bento className="bg-ink text-surface">
         <div className="flex items-center gap-2">
-          <Wallet size={18} className="opacity-70" />
-          <p className="text-xs font-semibold uppercase tracking-wider opacity-70">Kiểm soát tiền (toàn bộ đơn, trừ đơn huỷ)</p>
+          <Wallet size={18} className="text-surface/90" />
+          <p className="text-xs font-bold uppercase tracking-wider text-surface/90">Kiểm soát tiền (toàn bộ đơn, trừ đơn huỷ)</p>
         </div>
-        <p className="num mt-2 text-3xl font-extrabold">{formatMoney(totalContract)}</p>
-        <p className="text-sm opacity-70">Tổng giá trị hợp đồng · {valid.length} đơn</p>
+        <p className="num mt-2 text-3xl font-extrabold text-white">{formatMoney(totalContract)}</p>
+        <p className="text-sm font-medium text-surface/90">Tổng giá trị hợp đồng · {valid.length} đơn</p>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-xl bg-white/10 px-3 py-2">
-            <p className="text-xs opacity-70">Đã thanh toán</p>
+          <div className="rounded-xl bg-white/15 px-3 py-2">
+            <p className="text-xs font-semibold text-surface/90">Đã thanh toán</p>
             <p className="num text-lg font-extrabold text-emerald-300">{formatMoney(totalPaid)}</p>
           </div>
-          <div className="rounded-xl bg-white/10 px-3 py-2">
-            <p className="text-xs opacity-70">Công nợ còn lại</p>
+          <div className="rounded-xl bg-white/15 px-3 py-2">
+            <p className="text-xs font-semibold text-surface/90">Công nợ còn lại</p>
             <p className="num text-lg font-extrabold text-amber-300">{formatMoney(totalDebt)}</p>
           </div>
         </div>

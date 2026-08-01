@@ -56,7 +56,7 @@ export function DashboardPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Bento className="min-w-0 bg-ink text-surface">
-          <StatBig label="Hợp đồng hôm nay" value={formatMoney(todaySales)} hint={`${todayOrders.length} đơn`} tone="accent" />
+          <StatBig label="Hợp đồng hôm nay" value={formatMoney(todaySales)} hint={`${todayOrders.length} đơn`} tone="accent" dark />
         </Bento>
         <Bento className="min-w-0">
           <div className="flex items-start justify-between gap-2">

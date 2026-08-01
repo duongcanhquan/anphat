@@ -39,11 +39,14 @@ export function StatBig({
   value,
   hint,
   tone = 'default',
+  dark,
 }: {
   label: string
   value: string
   hint?: string
   tone?: 'default' | 'accent' | 'ok' | 'warn' | 'danger'
+  /** Đặt true khi nằm trên nền tối (bg-ink) để chữ sáng, rõ */
+  dark?: boolean
 }) {
   const tones = {
     default: 'text-ink',
@@ -52,18 +55,28 @@ export function StatBig({
     warn: 'text-warn',
     danger: 'text-danger',
   }
+  /* Trên nền tối dùng bản màu sáng để không bị chìm */
+  const darkTones = {
+    default: 'text-surface',
+    accent: 'text-accent-soft',
+    ok: 'text-emerald-300',
+    warn: 'text-amber-300',
+    danger: 'text-red-300',
+  }
   return (
     <div className="min-w-0">
-      <p className="text-xs font-medium uppercase tracking-wider text-muted">{label}</p>
+      <p className={cn('text-xs font-medium uppercase tracking-wider', dark ? 'text-surface/85' : 'text-muted')}>
+        {label}
+      </p>
       <p
         className={cn(
           'num mt-1 break-words text-xl font-extrabold leading-tight sm:text-2xl lg:text-3xl',
-          tones[tone],
+          dark ? darkTones[tone] : tones[tone],
         )}
       >
         {value}
       </p>
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      {hint && <p className={cn('mt-1 text-xs', dark ? 'text-surface/80' : 'text-muted')}>{hint}</p>}
     </div>
   )
 }
