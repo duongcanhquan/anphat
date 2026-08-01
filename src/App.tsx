@@ -10,6 +10,7 @@ import { WarehousePage } from '@/pages/WarehousePage'
 import { SalesPage } from '@/pages/SalesPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { ViewerHomePage, ViewerOrdersPage, ViewerWarehousePage } from '@/pages/ViewerPages'
 import type { ReactNode } from 'react'
 
 function Protected({ children }: { children: ReactNode }) {
@@ -65,6 +66,32 @@ function Protected({ children }: { children: ReactNode }) {
   return children
 }
 
+/** Viewer = người kiểm soát: giao diện riêng tối giản, chỉ xem */
+function useIsViewer() {
+  const { profile } = useAuth()
+  return profile?.role === 'viewer'
+}
+
+function HomeByRole() {
+  return useIsViewer() ? <ViewerHomePage /> : <DashboardPage />
+}
+
+function SalesByRole() {
+  return useIsViewer() ? <ViewerOrdersPage /> : <SalesPage />
+}
+
+function WarehouseByRole() {
+  return useIsViewer() ? <ViewerWarehousePage /> : <WarehousePage />
+}
+
+function ReportsByRole() {
+  return useIsViewer() ? <Navigate to="/" replace /> : <ReportsPage />
+}
+
+function SettingsByRole() {
+  return useIsViewer() ? <Navigate to="/" replace /> : <SettingsPage />
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -79,11 +106,11 @@ export default function App() {
                 </Protected>
               }
             >
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/ban-hang" element={<SalesPage />} />
-              <Route path="/kho" element={<WarehousePage />} />
-              <Route path="/tong-ket" element={<ReportsPage />} />
-              <Route path="/cai-dat" element={<SettingsPage />} />
+              <Route path="/" element={<HomeByRole />} />
+              <Route path="/ban-hang" element={<SalesByRole />} />
+              <Route path="/kho" element={<WarehouseByRole />} />
+              <Route path="/tong-ket" element={<ReportsByRole />} />
+              <Route path="/cai-dat" element={<SettingsByRole />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

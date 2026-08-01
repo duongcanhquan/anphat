@@ -15,12 +15,19 @@ import { Logo } from './Logo'
 import { cn } from '@/lib/utils'
 import { Badge, Button } from './ui'
 
-const nav = [
+const fullNav = [
   { to: '/', label: 'Tổng quan', short: 'Tổng quan', icon: LayoutDashboard, end: true },
   { to: '/ban-hang', label: 'Bán hàng', short: 'Bán hàng', icon: ShoppingCart },
   { to: '/kho', label: 'Kho', short: 'Kho', icon: Warehouse },
   { to: '/tong-ket', label: 'Tổng kết', short: 'Tổng kết', icon: BarChart3 },
   { to: '/cai-dat', label: 'Cài đặt', short: 'Cài đặt', icon: Settings },
+]
+
+/** Viewer chỉ kiểm soát — 3 màn hình: Tổng quan, Đơn hàng, Kho */
+const viewerNav = [
+  { to: '/', label: 'Tổng quan', short: 'Tổng quan', icon: LayoutDashboard, end: true },
+  { to: '/ban-hang', label: 'Đơn hàng', short: 'Đơn hàng', icon: ShoppingCart },
+  { to: '/kho', label: 'Kho', short: 'Kho', icon: Warehouse },
 ]
 
 const roleLabel = {
@@ -33,6 +40,7 @@ export function AppLayout() {
   const { profile, logout } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const nav = profile?.role === 'viewer' ? viewerNav : fullNav
 
   const handleLogout = async () => {
     await logout()
@@ -138,7 +146,12 @@ export function AppLayout() {
         </main>
 
         {/* Mobile / iPad portrait bottom nav — pinned to viewport bottom via flex */}
-        <nav className="sticky bottom-0 z-40 grid shrink-0 grid-cols-5 gap-1 border-t border-line/70 bg-card/95 px-1.5 py-1.5 backdrop-blur safe-bottom sm:px-2 sm:py-2 lg:hidden">
+        <nav
+          className={cn(
+            'sticky bottom-0 z-40 grid shrink-0 gap-1 border-t border-line/70 bg-card/95 px-1.5 py-1.5 backdrop-blur safe-bottom sm:px-2 sm:py-2 lg:hidden',
+            nav.length === 3 ? 'grid-cols-3' : 'grid-cols-5',
+          )}
+        >
           {nav.map((item) => (
             <NavLink
               key={item.to}
