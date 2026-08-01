@@ -160,7 +160,7 @@ export function AppLayout() {
               className={({ isActive }) =>
                 cn(
                   'flex min-h-[3.25rem] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1.5 text-[10px] font-semibold leading-tight sm:min-h-0 sm:text-[11px]',
-                  isActive ? 'bg-accent-soft text-accent' : 'text-muted',
+                  isActive ? 'bg-accent-soft text-accent-hot' : 'text-muted',
                 )
               }
             >

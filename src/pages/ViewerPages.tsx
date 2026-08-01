@@ -18,6 +18,7 @@ import {
   orderPaidTotal,
   orderPaymentsList,
   resolveOrderStatus,
+  stockLevel,
 } from '@/types'
 import { cn, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
@@ -74,7 +75,9 @@ export function ViewerHomePage() {
   }, [orders])
 
   const activeMaterials = materials.filter((m) => m.active)
-  const lowStock = activeMaterials.filter((m) => m.stock <= m.lowStockAlert)
+  /** Đã hết: tồn = 0 · Sắp hết: tồn > 0 nhưng ≤ mức cảnh báo */
+  const outOfStock = activeMaterials.filter((m) => stockLevel(m) === 'het')
+  const lowStock = activeMaterials.filter((m) => stockLevel(m) === 'sap_het')
   const debtCustomers = customers.filter((c) => (c.totalDebt || 0) > 0)
 
   return (
@@ -117,7 +120,7 @@ export function ViewerHomePage() {
         </div>
         <Link
           to="/ban-hang"
-          className="mt-3 block rounded-xl bg-accent-soft px-3 py-2.5 text-center text-sm font-bold text-accent"
+          className="mt-3 block rounded-xl bg-accent-soft px-3 py-2.5 text-center text-sm font-bold text-accent-hot"
         >
           Xem tất cả {orders.length} đơn hàng →
         </Link>
@@ -125,19 +128,37 @@ export function ViewerHomePage() {
 
       {/* KHO — cảnh báo */}
       <Bento title="Kiểm soát kho" subtitle={`${activeMaterials.length} vật liệu đang theo dõi`}>
-        {lowStock.length === 0 ? (
+        {outOfStock.length === 0 && lowStock.length === 0 ? (
           <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-ok">
-            Kho ổn định — không có vật liệu dưới mức cảnh báo.
+            Kho ổn định — không có vật liệu hết hoặc sắp hết.
           </p>
         ) : (
           <div className="space-y-2">
             <p className="flex items-center gap-1.5 text-sm font-semibold text-danger">
-              <AlertTriangle size={15} /> {lowStock.length} vật liệu sắp hết
+              <AlertTriangle size={15} />
+              {[
+                outOfStock.length > 0 && `${outOfStock.length} vật liệu đã hết`,
+                lowStock.length > 0 && `${lowStock.length} vật liệu sắp hết`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </p>
+            {outOfStock.map((m) => (
+              <div key={m.id} className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                <span className="min-w-0 break-words font-medium">{m.name}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="num font-bold text-danger">0 {m.unit}</span>
+                  <Badge tone="danger">Đã hết</Badge>
+                </span>
+              </div>
+            ))}
             {lowStock.map((m) => (
-              <div key={m.id} className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-                <span className="font-medium">{m.name}</span>
-                <span className="num font-bold text-danger">{formatNumber(m.stock)} {m.unit}</span>
+              <div key={m.id} className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                <span className="min-w-0 break-words font-medium">{m.name}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="num font-bold text-warn">{formatNumber(m.stock)} {m.unit}</span>
+                  <Badge tone="warn">Sắp hết</Badge>
+                </span>
               </div>
             ))}
           </div>
@@ -377,19 +398,27 @@ export function ViewerWarehousePage() {
 
       <div className="grid grid-cols-2 gap-2">
         {active.map((m) => {
-          const low = m.stock <= m.lowStockAlert
+          const level = stockLevel(m)
           const dual = stockDualUnits(m, conversions)
           return (
-            <Bento key={m.id} className={cn('min-w-0 !p-3', low && 'border border-danger/30 bg-red-50/60')}>
+            <Bento
+              key={m.id}
+              className={cn(
+                'min-w-0 !p-3',
+                level === 'het' && 'border border-danger/30 bg-red-50/60',
+                level === 'sap_het' && 'border border-warn/30 bg-amber-50/60',
+              )}
+            >
               <p className="break-words text-sm font-semibold leading-tight">{m.name}</p>
-              <p className={cn('num mt-1.5 text-2xl font-extrabold', low && 'text-danger')}>
+              <p className={cn('num mt-1.5 text-2xl font-extrabold', level === 'het' && 'text-danger', level === 'sap_het' && 'text-warn')}>
                 {formatNumber(m.stock)}
               </p>
               <p className="text-xs text-accent">{m.unit}</p>
               {dual.convertedQty != null && dual.convertedUnit && (
                 <p className="text-[11px] text-muted">≈ {formatNumber(dual.convertedQty)} {dual.convertedUnit}</p>
               )}
-              {low && <Badge tone="danger">Sắp hết</Badge>}
+              {level === 'het' && <Badge tone="danger">Đã hết</Badge>}
+              {level === 'sap_het' && <Badge tone="warn">Sắp hết</Badge>}
             </Bento>
           )
         })}

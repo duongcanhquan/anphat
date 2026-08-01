@@ -107,7 +107,7 @@ export function LoginPage() {
               type="checkbox"
               checked={remember}
               onChange={(e) => setRemember(e.target.checked)}
-              className="h-4 w-4 accent-[var(--accent)]"
+              className="h-4 w-4 accent-accent"
             />
             Ghi nhớ đăng nhập
           </label>

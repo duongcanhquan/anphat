@@ -393,7 +393,7 @@ function MaterialsTab({
               return (
                 <div key={u} className="inline-flex items-center gap-1 rounded-xl bg-accent-soft px-2 py-1">
                   <Badge tone="accent">{u}</Badge>
-                  <button type="button" className="text-xs font-semibold text-accent" onClick={() => { setEditUnitName(u); setEditUnitValue(u) }}>
+                  <button type="button" className="text-xs font-semibold text-accent-hot" onClick={() => { setEditUnitName(u); setEditUnitValue(u) }}>
                     Sửa
                   </button>
                   {!isDefault && (

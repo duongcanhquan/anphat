@@ -12,7 +12,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge, Bento, Button, Empty, PageHeader, StatBig, Tabs } from '@/components/ui'
 import { watchCustomers, watchMaterials, watchOrders, watchPayments } from '@/lib/store'
 import type { Customer, DebtPayment, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS, normalizeOrderStatus, normalizeUnit, orderPaidTotal, resolveOrderStatus } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, normalizeUnit, orderPaidTotal, resolveOrderStatus, stockLevel } from '@/types'
 import {
   formatDateTime,
   formatMoney,
@@ -193,13 +193,23 @@ export function ReportsPage() {
       {tab === 'kho' && (
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {materials.filter((m) => m.active).map((m) => {
-            const low = m.stock <= m.lowStockAlert
+            const level = stockLevel(m)
             return (
-              <Bento key={m.id} className={low ? 'border-danger/30 bg-red-50/50' : undefined}>
+              <Bento
+                key={m.id}
+                className={
+                  level === 'het'
+                    ? 'border-danger/30 bg-red-50/50'
+                    : level === 'sap_het'
+                      ? 'border-warn/30 bg-amber-50/50'
+                      : undefined
+                }
+              >
                 <p className="font-semibold leading-tight">{m.name}</p>
                 <p className="num mt-2 text-3xl font-extrabold">{formatNumber(m.stock)}</p>
                 <p className="text-sm text-accent">{m.unit}</p>
-                {low && <Badge tone="danger">Dưới mức cảnh báo</Badge>}
+                {level === 'het' && <Badge tone="danger">Đã hết</Badge>}
+                {level === 'sap_het' && <Badge tone="warn">Sắp hết</Badge>}
               </Bento>
             )
           })}
@@ -221,7 +231,7 @@ export function ReportsPage() {
                   }`}
                 >
                   <p className="font-semibold">{c.name}</p>
-                  <p className={`text-xs ${selectedCustomer === c.id ? 'text-white/80' : 'text-muted'}`}>
+                  <p className={`text-xs ${selectedCustomer === c.id ? 'text-white/90' : 'text-muted'}`}>
                     Nợ: {formatMoney(c.totalDebt || 0)}
                   </p>
                 </button>

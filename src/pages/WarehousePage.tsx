@@ -12,7 +12,7 @@ import {
   watchUsers,
 } from '@/lib/store'
 import type { CompanySettings, Conversion, Material, StockEntry, WeightUnit } from '@/types'
-import { allWeightUnits, canWrite } from '@/types'
+import { allWeightUnits, canWrite, stockLevel } from '@/types'
 import { stockDualUnits } from '@/components/FormulaBuilder'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
@@ -201,18 +201,25 @@ export function WarehousePage() {
           ) : (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {active.map((m) => {
-                const low = m.stock <= m.lowStockAlert
+                const level = stockLevel(m)
                 const dual = stockDualUnits(m, conversions)
                 return (
                   <button
                     type="button"
                     key={m.id}
                     onClick={() => { setHistoryMat(m); setTab('lich-su') }}
-                    className={`bento block w-full min-w-0 p-3 text-left animate-fade-up sm:p-5 ${low ? 'border-danger/40 bg-red-50/60' : ''}`}
+                    className={`bento block w-full min-w-0 p-3 text-left animate-fade-up sm:p-5 ${
+                      level === 'het'
+                        ? 'border-danger/40 bg-red-50/60'
+                        : level === 'sap_het'
+                          ? 'border-warn/40 bg-amber-50/60'
+                          : ''
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="min-w-0 break-words font-display text-sm font-bold leading-tight sm:text-base">{m.name}</p>
-                      {low && <Badge tone="danger">Thấp</Badge>}
+                      {level === 'het' && <Badge tone="danger">Đã hết</Badge>}
+                      {level === 'sap_het' && <Badge tone="warn">Sắp hết</Badge>}
                     </div>
                     <div className="mt-3 space-y-2">
                       <div>

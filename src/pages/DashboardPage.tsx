@@ -5,7 +5,7 @@ import { Bento, PageHeader, StatBig, Badge } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { watchCustomers, watchMaterials, watchOrders } from '@/lib/store'
 import type { Customer, Material, Order } from '@/types'
-import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal, resolveOrderStatus } from '@/types'
+import { ORDER_STATUS_LABELS, normalizeOrderStatus, orderPaidTotal, resolveOrderStatus, stockLevel } from '@/types'
 import { formatMoney, formatNumber, formatDateTime, getPeriodRange } from '@/lib/utils'
 
 export function DashboardPage() {
@@ -41,7 +41,10 @@ export function DashboardPage() {
   const todaySales = todayOrders.reduce((s, o) => s + (o.totalAmount || 0), 0)
   const todayPaid = todayOrders.reduce((s, o) => s + orderPaidTotal(o), 0)
   const totalDebt = customers.reduce((s, c) => s + (c.totalDebt || 0), 0)
-  const lowStock = materials.filter((m) => m.active && m.stock <= m.lowStockAlert)
+  /** Đã hết: tồn = 0 · Sắp hết: tồn > 0 nhưng ≤ mức cảnh báo */
+  const outOfStock = materials.filter((m) => m.active && stockLevel(m) === 'het')
+  const lowStock = materials.filter((m) => m.active && stockLevel(m) === 'sap_het')
+  const stockAlerts = outOfStock.length + lowStock.length
   const recent = orders.slice(0, 6)
 
   return (
@@ -71,11 +74,20 @@ export function DashboardPage() {
           <div className="flex items-start justify-between gap-2">
             <StatBig
               label="Cảnh báo kho"
-              value={String(lowStock.length)}
-              hint="vật liệu dưới mức"
-              tone={lowStock.length ? 'danger' : 'ok'}
+              value={String(stockAlerts)}
+              hint={
+                stockAlerts > 0
+                  ? [
+                      outOfStock.length > 0 && `${outOfStock.length} đã hết`,
+                      lowStock.length > 0 && `${lowStock.length} sắp hết`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : 'kho ổn định'
+              }
+              tone={outOfStock.length ? 'danger' : lowStock.length ? 'warn' : 'ok'}
             />
-            <AlertTriangle className={`shrink-0 ${lowStock.length ? 'text-danger animate-soft-pulse' : 'text-ok'}`} size={22} />
+            <AlertTriangle className={`shrink-0 ${stockAlerts ? 'text-danger animate-soft-pulse' : 'text-ok'}`} size={22} />
           </div>
         </Bento>
       </div>
@@ -122,13 +134,26 @@ export function DashboardPage() {
         </Bento>
       </div>
 
-      {lowStock.length > 0 && (
-        <Bento title="Vật liệu sắp hết" className="mt-3" subtitle="Admin có thể chỉnh mức cảnh báo trong Cài đặt">
+      {stockAlerts > 0 && (
+        <Bento title="Vật liệu cần chú ý" className="mt-3" subtitle="Đã hết: tồn = 0 · Sắp hết: còn hàng nhưng dưới mức cảnh báo">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {lowStock.map((m) => (
+            {outOfStock.map((m) => (
               <div key={m.id} className="rounded-2xl border border-danger/20 bg-red-50 px-3 py-3">
-                <p className="font-semibold">{m.name}</p>
-                <p className="num text-lg font-bold text-danger">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 break-words font-semibold">{m.name}</p>
+                  <Badge tone="danger">Đã hết</Badge>
+                </div>
+                <p className="num text-lg font-bold text-danger">0 {m.unit}</p>
+                <p className="text-xs text-muted">Cần nhập kho để tạo đơn</p>
+              </div>
+            ))}
+            {lowStock.map((m) => (
+              <div key={m.id} className="rounded-2xl border border-warn/20 bg-amber-50 px-3 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 break-words font-semibold">{m.name}</p>
+                  <Badge tone="warn">Sắp hết</Badge>
+                </div>
+                <p className="num text-lg font-bold text-warn">
                   {formatNumber(m.stock)} {m.unit}
                 </p>
                 <p className="text-xs text-muted">Cảnh báo ≤ {formatNumber(m.lowStockAlert)} {m.unit}</p>

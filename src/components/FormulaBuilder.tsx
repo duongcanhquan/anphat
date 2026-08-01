@@ -292,7 +292,7 @@ export function FormulaBuilder({
                         disabled={readOnly}
                         onChange={(e) => updateMaterialQty(t.id, Number(e.target.value) || 0)}
                       />
-                      <span className="text-xs font-semibold text-accent">
+                      <span className="text-xs font-semibold text-accent-hot">
                         {t.unit} {t.materialName}
                       </span>
                       {!readOnly && (

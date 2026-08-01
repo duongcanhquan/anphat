@@ -173,7 +173,7 @@ export function Badge({
 }) {
   const tones = {
     default: 'bg-surface-2 text-ink-soft',
-    accent: 'bg-accent-soft text-accent',
+    accent: 'bg-accent-soft text-accent-hot',
     ok: 'bg-emerald-100 text-ok',
     warn: 'bg-amber-100 text-warn',
     danger: 'bg-red-100 text-danger',

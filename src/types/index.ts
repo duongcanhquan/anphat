@@ -126,6 +126,26 @@ export interface Material {
 
 export type StockMovementType = 'import' | 'export'
 
+/**
+ * Phân loại tồn kho:
+ * - het: tồn = 0 → ĐÃ HẾT hàng
+ * - sap_het: tồn > 0 nhưng ≤ mức cảnh báo → SẮP HẾT
+ * - on: trên mức cảnh báo → ổn định
+ */
+export type StockLevel = 'het' | 'sap_het' | 'on'
+
+export function stockLevel(m: { stock: number; lowStockAlert: number }): StockLevel {
+  if (!(m.stock > 0)) return 'het'
+  if (m.stock <= m.lowStockAlert) return 'sap_het'
+  return 'on'
+}
+
+export const STOCK_LEVEL_LABELS: Record<StockLevel, string> = {
+  het: 'Đã hết',
+  sap_het: 'Sắp hết',
+  on: 'Ổn định',
+}
+
 export interface StockEntry {
   id: string
   materialId: string

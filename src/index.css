@@ -9,10 +9,13 @@
   --color-surface: #f3ebe0;
   --color-surface-2: #ebe1d3;
   --color-card: #fffaf3;
-  --color-line: #d4c4b0;
-  --color-muted: #7a6a58;
-  --color-accent: #c45c26;
-  --color-accent-hot: #e07a3a;
+  --color-line: #c9b69e;
+  /* Đậm hơn để chữ phụ đọc rõ trên mọi nền be (đạt WCAG AA) */
+  --color-muted: #665744;
+  /* Cam đất trầm hơn — chữ trắng trên nút và chữ cam trên nền sáng đều rõ */
+  --color-accent: #b14e1d;
+  /* Hover đậm hơn thay vì nhạt hơn — chữ trắng không bị mờ khi bấm */
+  --color-accent-hot: #9a4419;
   --color-accent-soft: #f6d5bc;
   --color-ok: #2f6b4f;
   --color-warn: #b45309;
