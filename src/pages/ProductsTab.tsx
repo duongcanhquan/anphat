@@ -5,8 +5,8 @@ import { MoneyInput } from '@/components/MoneyInput'
 import { Badge, Bento, Button, Empty, Input, Modal, Select } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { createAuditLog, createFormula, deleteFormula, updateFormula } from '@/lib/store'
-import type { Conversion, Formula, FormulaExprToken, Material, ProductRecipe, WeightUnit } from '@/types'
-import { getDefaultRecipe, getProductRecipes, itemsFromExpression, normalizeUnit } from '@/types'
+import type { Conversion, Formula, FormulaExprToken, Material, ProductRecipe, ProductionCalcType, ProductionItem, WeightUnit } from '@/types'
+import { PRODUCTION_CALC_LABELS, getDefaultRecipe, getProductRecipes, itemsFromExpression, normalizeUnit } from '@/types'
 import { formatMoney, formatNumber, uid } from '@/lib/utils'
 
 export function ProductsTab({
@@ -36,6 +36,10 @@ export function ProductsTab({
   const [newRecipeLabel, setNewRecipeLabel] = useState('')
 
   const activeRecipe = recipes.find((r) => r.id === activeRecipeId) || recipes[0]
+  const productionRecipeId =
+    recipes.find((r) => r.isDefault && !r.customerId)?.id ||
+    recipes.find((r) => !r.customerId)?.id
+  const showProductionNorms = !!activeRecipe && activeRecipe.id === productionRecipeId
 
   const resetForm = () => {
     setEdit(null)
@@ -293,6 +297,106 @@ export function ProductsTab({
                   onChange={updateActiveExpression}
                   readOnly={!writable}
                 />
+                <div className="mt-4 rounded-xl bg-surface p-3">
+                  <p className="mb-2 text-sm font-semibold">Định mức sản xuất (%)</p>
+                  {showProductionNorms ? (
+                    <>
+                  <p className="mb-2 text-xs text-muted">Nhựa trừ khỏi sản lượng khi tính đá. Hệ số đá mặc định 1,03. % nhập 5.2 = 5,2%. Lệnh SX lấy định mức từ công thức mặc định.</p>
+                  <Input
+                    label="Hệ số đá"
+                    type="number"
+                    step="any"
+                    value={String(activeRecipe.stoneFactor ?? 1.03)}
+                    onChange={(e) => {
+                      const n = Number(e.target.value) || 1.03
+                      setRecipes((prev) =>
+                        prev.map((r) => (r.id === activeRecipe.id ? { ...r, stoneFactor: n } : r)),
+                      )
+                    }}
+                  />
+                  <div className="mt-2 space-y-2">
+                    {(activeRecipe.productionItems || []).map((it, idx) => (
+                      <div key={`${it.materialId}-${idx}`} className="grid grid-cols-[1fr_7.5rem_5rem_auto] items-end gap-2">
+                        <p className="truncate pb-2 text-sm font-medium">{it.materialName}</p>
+                        <Select
+                          value={it.calcType}
+                          onChange={(e) => {
+                            const calcType = e.target.value as ProductionCalcType
+                            const next = [...(activeRecipe.productionItems || [])]
+                            next[idx] = { ...it, calcType }
+                            setRecipes((prev) =>
+                              prev.map((r) => (r.id === activeRecipe.id ? { ...r, productionItems: next } : r)),
+                            )
+                          }}
+                        >
+                          {(Object.keys(PRODUCTION_CALC_LABELS) as ProductionCalcType[]).map((k) => (
+                            <option key={k} value={k}>{PRODUCTION_CALC_LABELS[k]}</option>
+                          ))}
+                        </Select>
+                        <Input
+                          type="number"
+                          step="any"
+                          value={String(it.percent || '')}
+                          disabled={it.calcType === 'manual'}
+                          onChange={(e) => {
+                            const next = [...(activeRecipe.productionItems || [])]
+                            next[idx] = { ...it, percent: Number(e.target.value) || 0 }
+                            setRecipes((prev) =>
+                              prev.map((r) => (r.id === activeRecipe.id ? { ...r, productionItems: next } : r)),
+                            )
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            const next = (activeRecipe.productionItems || []).filter((_, i) => i !== idx)
+                            setRecipes((prev) =>
+                              prev.map((r) => (r.id === activeRecipe.id ? { ...r, productionItems: next } : r)),
+                            )
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    <Select
+                      label="Thêm vật liệu định mức"
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value
+                        const mat = materials.find((m) => m.id === id)
+                        if (!mat) return
+                        const row: ProductionItem = {
+                          materialId: mat.id,
+                          materialName: mat.name,
+                          unit: mat.unit,
+                          calcType: 'rate',
+                          percent: 0,
+                        }
+                        setRecipes((prev) =>
+                          prev.map((r) =>
+                            r.id === activeRecipe.id
+                              ? { ...r, productionItems: [...(r.productionItems || []), row] }
+                              : r,
+                          ),
+                        )
+                      }}
+                    >
+                      <option value="">— Chọn vật liệu —</option>
+                      {materials.filter((m) => m.active).map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </Select>
+                  </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted">Định mức SX nằm ở công thức mặc định. Mở tab mặc định để sửa.</p>
+                  )}
+                </div>
               </>
             )}
             <div className="mt-3 flex gap-2">

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import * as XLSX from 'xlsx'
 import { Plus, Trash2, Upload } from 'lucide-react'
 import { ProductsTab } from '@/pages/ProductsTab'
+import { SuppliersTab } from '@/pages/SuppliersTab'
 import {
   Badge,
   Bento,
@@ -41,6 +42,8 @@ import {
   watchOrders,
   watchAuditLogs,
   createAuditLog,
+  watchSuppliers,
+  watchPurchaseOrders,
 } from '@/lib/store'
 import type {
   AppUser,
@@ -51,6 +54,8 @@ import type {
   Formula,
   Material,
   Order,
+  PurchaseOrder,
+  Supplier,
   UserRole,
   WeightUnit,
 } from '@/types'
@@ -68,7 +73,7 @@ import {
 } from '@/types'
 import { cn, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
 
-type SettingsTab = 'users' | 'khach' | 'vat-lieu' | 'quy-doi' | 'san-pham' | 'lich-su'
+type SettingsTab = 'users' | 'khach' | 'ncc' | 'vat-lieu' | 'quy-doi' | 'san-pham' | 'lich-su'
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
@@ -81,6 +86,8 @@ export function SettingsPage() {
   const [conversions, setConversions] = useState<Conversion[]>([])
   const [formulas, setFormulas] = useState<Formula[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [settings, setSettings] = useState<CompanySettings | null>(null)
@@ -95,6 +102,8 @@ export function SettingsPage() {
       watchConversions(setConversions),
       watchFormulas(setFormulas),
       watchCustomers(setCustomers),
+      watchSuppliers(setSuppliers),
+      watchPurchaseOrders(setPurchaseOrders),
       watchOrders(setOrders),
       watchUsers(setUsers),
       watchSettings(setSettings),
@@ -106,6 +115,7 @@ export function SettingsPage() {
   const tabs = [
     ...(manageUsers ? [{ id: 'users', label: 'Tài khoản' }] : []),
     { id: 'khach', label: 'Khách hàng' },
+    { id: 'ncc', label: 'Nhà cung cấp' },
     { id: 'vat-lieu', label: 'Vật liệu' },
     { id: 'quy-doi', label: 'Quy đổi' },
     { id: 'san-pham', label: 'Sản phẩm' },
@@ -140,6 +150,16 @@ export function SettingsPage() {
         <CustomersTab
           customers={customers}
           orders={orders}
+          writable={writable}
+          profileId={profile?.id || ''}
+          profileName={profile?.displayName || ''}
+          onMsg={setMsg}
+        />
+      )}
+      {tab === 'ncc' && (
+        <SuppliersTab
+          suppliers={suppliers}
+          purchaseOrders={purchaseOrders}
           writable={writable}
           profileId={profile?.id || ''}
           profileName={profile?.displayName || ''}

@@ -163,6 +163,9 @@ export interface StockEntry {
   batchLabel?: string
   orderId?: string
   orderCode?: string
+  purchaseOrderId?: string
+  supplierId?: string
+  productionOrderId?: string
 }
 
 export interface Conversion {
@@ -203,6 +206,26 @@ export interface ProductRecipe {
   /** Công thức riêng cho một khách hàng — tự áp dụng khi tạo đơn cho khách đó */
   customerId?: string
   customerName?: string
+  /** Định mức sản xuất theo % (module SX) */
+  productionItems?: ProductionItem[]
+  stoneFactor?: number
+}
+
+export type ProductionCalcType = 'stone' | 'nhua' | 'rate' | 'manual'
+
+export const PRODUCTION_CALC_LABELS: Record<ProductionCalcType, string> = {
+  stone: 'Đá (× hệ số)',
+  nhua: 'Nhựa (trừ khi tính đá)',
+  rate: 'Tỷ lệ (dầu, than…)',
+  manual: 'Nhập tay (MC, nhũ)',
+}
+
+export interface ProductionItem {
+  materialId: string
+  materialName: string
+  unit: WeightUnit
+  calcType: ProductionCalcType
+  percent: number
 }
 
 export interface Formula {
@@ -318,6 +341,119 @@ export interface CompanySettings {
   n8nEnabled: boolean
   logoText: string
   customUnits?: string[]
+}
+
+export type PurchaseStatus = 'draft' | 'open' | 'closed' | 'huy'
+
+export const PURCHASE_STATUS_LABELS: Record<PurchaseStatus, string> = {
+  draft: 'Nháp',
+  open: 'Đã chốt',
+  closed: 'Đã đóng',
+  huy: 'Huỷ',
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  taxCode: string
+  address: string
+  phone: string
+  email: string
+  note: string
+  openingDebt: number
+  openingAt: number
+  pendingCarry: number
+  pendingCarryFromOrderId?: string
+  totalDebt: number
+  totalPurchased: number
+  active: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface PurchasePayment {
+  id: string
+  amount: number
+  note: string
+  paidAt: number
+  createdBy: string
+  createdByName?: string
+}
+
+export interface PurchaseReceipt {
+  id: string
+  quantity: number
+  createdAt: number
+  createdBy: string
+  createdByName?: string
+  stockEntryId?: string
+}
+
+export interface PurchaseOrder {
+  id: string
+  code: string
+  supplierId: string
+  supplierName: string
+  materialId: string
+  materialName: string
+  unit: WeightUnit
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  carriedIn: number
+  carriedFromOrderId?: string
+  carriedOut: number
+  carriedToOrderId?: string
+  payments: PurchasePayment[]
+  receipts: PurchaseReceipt[]
+  status: PurchaseStatus
+  note: string
+  orderAt: number
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  createdByName?: string
+}
+
+export type ProductionStatus = 'draft' | 'confirmed' | 'huy'
+
+export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
+  draft: 'Nháp',
+  confirmed: 'Đã chốt',
+  huy: 'Huỷ',
+}
+
+export interface ProductionLine {
+  id: string
+  materialId: string
+  materialName: string
+  unit: WeightUnit
+  calcType: ProductionCalcType
+  percent: number
+  quantity: number
+  deductedQty?: number
+}
+
+export interface ProductionOrder {
+  id: string
+  code: string
+  formulaId: string
+  formulaName: string
+  quantity: number
+  stoneFactor: number
+  salesOrderId?: string
+  salesOrderCode?: string
+  salesOrderLineId?: string
+  salesUnitPrice?: number
+  lines: ProductionLine[]
+  status: ProductionStatus
+  stockDeducted?: boolean
+  confirmedAt?: number
+  note: string
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  createdByName?: string
 }
 
 export interface DebtPayment {
@@ -502,6 +638,19 @@ export function getDefaultRecipe(f: Formula): ProductRecipe {
     recipes.find((r) => !r.customerId) ||
     recipes[0]
   )
+}
+
+export function getProductionSetup(f: Formula): { items: ProductionItem[]; stoneFactor: number } {
+  const recipes = getProductRecipes(f)
+  const recipe = getDefaultRecipe(f)
+  const withItems = recipes.find((r) => !r.customerId && (r.productionItems?.length || 0) > 0)
+  const source = (recipe?.productionItems?.length ? recipe : withItems) || recipe
+  const factorSrc =
+    recipe?.stoneFactor && recipe.stoneFactor > 0 ? recipe : withItems || recipe
+  return {
+    items: source?.productionItems || [],
+    stoneFactor: factorSrc?.stoneFactor && factorSrc.stoneFactor > 0 ? factorSrc.stoneFactor : 1.03,
+  }
 }
 
 /** Công thức riêng đã lưu cho một khách hàng (nếu có) */

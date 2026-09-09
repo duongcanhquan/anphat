@@ -328,7 +328,7 @@ function ViewerOrderDetail({ order }: { order: Order }) {
       <div>
         <p className="mb-2 text-sm font-bold">Sản phẩm</p>
         <div className="space-y-2">
-          {order.lines.map((l) => (
+          {(order.lines || []).map((l) => (
             <div key={l.id} className="rounded-xl bg-surface px-3 py-2.5">
               <div className="flex items-baseline justify-between gap-2">
                 <p className="min-w-0 break-words font-semibold">{l.formulaName}</p>

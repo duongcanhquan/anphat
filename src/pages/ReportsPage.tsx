@@ -10,9 +10,10 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge, Bento, Button, Empty, PageHeader, StatBig, Tabs } from '@/components/ui'
-import { watchCustomers, watchMaterials, watchOrders, watchPayments } from '@/lib/store'
-import type { Customer, DebtPayment, Material, Order } from '@/types'
+import { watchCustomers, watchMaterials, watchOrders, watchPayments, watchPurchaseOrders, watchProductionOrders, watchStockEntries, watchSuppliers } from '@/lib/store'
+import type { Customer, DebtPayment, Material, Order, ProductionOrder, PurchaseOrder, StockEntry, Supplier } from '@/types'
 import { ORDER_STATUS_LABELS, normalizeOrderStatus, normalizeUnit, orderPaidTotal, resolveOrderStatus, stockLevel } from '@/types'
+import { salesOrderTracking, stockPeriodRows, supplierPeriodLedger } from '@/lib/ledger'
 import {
   formatDateTime,
   formatMoney,
@@ -21,7 +22,7 @@ import {
   type PeriodType,
 } from '@/lib/utils'
 
-type TabId = 'ky' | 'kho' | 'khach'
+type TabId = 'ky' | 'kho' | 'khach' | 'ncc' | 'don'
 
 export function ReportsPage() {
   const [tab, setTab] = useState<TabId>('ky')
@@ -31,18 +32,24 @@ export function ReportsPage() {
   const [materials, setMaterials] = useState<Material[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [payments, setPayments] = useState<DebtPayment[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [purchases, setPurchases] = useState<PurchaseOrder[]>([])
+  const [productions, setProductions] = useState<ProductionOrder[]>([])
+  const [entries, setEntries] = useState<StockEntry[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<string>('')
+  const [selectedSupplier, setSelectedSupplier] = useState<string>('')
 
   useEffect(() => {
     const u1 = watchOrders(setOrders)
     const u2 = watchMaterials(setMaterials)
     const u3 = watchCustomers(setCustomers)
     const u4 = watchPayments(setPayments)
+    const u5 = watchSuppliers(setSuppliers)
+    const u6 = watchPurchaseOrders(setPurchases)
+    const u7 = watchProductionOrders(setProductions)
+    const u8 = watchStockEntries(setEntries)
     return () => {
-      u1()
-      u2()
-      u3()
-      u4()
+      u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8()
     }
   }, [])
 
@@ -71,6 +78,71 @@ export function ReportsPage() {
   const custOrders = orders.filter((o) => o.customerId === selectedCustomer && normalizeOrderStatus(o.status) !== 'huy')
   const custPayments = payments.filter((p) => p.customerId === selectedCustomer)
 
+  const nccRows = useMemo(
+    () =>
+      supplierPeriodLedger({
+        from: range.from,
+        to: range.to,
+        suppliers: suppliers.map((s) => ({
+          id: s.id,
+          name: s.name,
+          openingDebt: s.openingDebt || 0,
+          openingAt: s.openingAt || 0,
+        })),
+        orders: purchases.map((o) => ({
+          id: o.id,
+          supplierId: o.supplierId,
+          status: o.status,
+          orderAt: o.orderAt,
+          lineTotal: o.lineTotal,
+          payments: (o.payments || []).map((p) => ({ amount: p.amount, paidAt: p.paidAt })),
+        })),
+      }),
+    [range.from, range.to, suppliers, purchases],
+  )
+
+  const khoRows = useMemo(
+    () =>
+      stockPeriodRows({
+        from: range.from,
+        to: range.to,
+        now: Date.now(),
+        materials: materials.map((m) => ({
+          id: m.id,
+          name: m.name,
+          unit: m.unit,
+          stock: m.stock,
+          active: m.active,
+        })),
+        entries,
+      }),
+    [range.from, range.to, materials, entries],
+  )
+
+  const trackRows = useMemo(
+    () =>
+      salesOrderTracking({
+        orders: orders.map((o) => ({
+          id: o.id,
+          code: o.code,
+          totalAmount: o.totalAmount,
+          status: normalizeOrderStatus(o.status),
+        })),
+        productions: productions.map((p) => ({
+          salesOrderId: p.salesOrderId,
+          status: p.status,
+          quantity: p.quantity,
+          salesUnitPrice: p.salesUnitPrice || 0,
+        })),
+      }),
+    [orders, productions],
+  )
+
+  const sup = suppliers.find((s) => s.id === selectedSupplier)
+  const supPurchases = purchases.filter(
+    (o) => o.supplierId === selectedSupplier && o.status !== 'draft' && o.status !== 'huy',
+  )
+
   return (
     <div>
       <PageHeader title="Tổng kết" />
@@ -80,6 +152,8 @@ export function ReportsPage() {
           { id: 'ky', label: 'Theo kỳ' },
           { id: 'kho', label: 'Kho' },
           { id: 'khach', label: 'Khách hàng' },
+          { id: 'ncc', label: 'Nhà cung cấp' },
+          { id: 'don', label: 'Theo dõi đơn' },
         ]}
         value={tab}
         onChange={(id) => setTab(id as TabId)}
@@ -191,6 +265,7 @@ export function ReportsPage() {
       )}
 
       {tab === 'kho' && (
+        <>
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {materials.filter((m) => m.active).map((m) => {
             const level = stockLevel(m)
@@ -215,6 +290,33 @@ export function ReportsPage() {
           })}
           {materials.filter((m) => m.active).length === 0 && <Empty text="Chưa có vật liệu." />}
         </div>
+        <Bento className="mt-3" title={`Sổ kho kỳ ${range.label}`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="pb-1">Vật liệu</th>
+                  <th>Đầu</th>
+                  <th>Nhập</th>
+                  <th>Xuất</th>
+                  <th>Cuối</th>
+                </tr>
+              </thead>
+              <tbody>
+                {khoRows.map((r) => (
+                  <tr key={r.materialId} className="border-t border-line/60">
+                    <td className="py-1.5">{r.name} <span className="text-xs text-muted">{r.unit}</span></td>
+                    <td className="num">{formatNumber(r.opening)}</td>
+                    <td className="num text-ok">{formatNumber(r.inQty)}</td>
+                    <td className="num text-warn">{formatNumber(r.outQty)}</td>
+                    <td className="num font-bold">{formatNumber(r.closing)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Bento>
+        </>
       )}
 
       {tab === 'khach' && (
@@ -269,7 +371,7 @@ export function ReportsPage() {
                           <p className="num font-bold">{formatMoney(o.totalAmount)}</p>
                         </div>
                         <p className="text-xs text-muted">
-                          {o.lines.map((l) => `${l.formulaName} × ${formatNumber(l.quantity)}`).join(', ')}
+                          { (o.lines || []).map((l) => `${l.formulaName} × ${formatNumber(l.quantity)}`).join(', ')}
                         </p>
                       </div>
                     ))}
@@ -291,6 +393,82 @@ export function ReportsPage() {
             )}
           </Bento>
         </div>
+      )}
+
+      {tab === 'ncc' && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">Kỳ {range.label} — đổi kỳ ở tab Theo kỳ (cùng mốc ngày).</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="pb-1">Nhà cung cấp</th>
+                  <th>Nợ đầu</th>
+                  <th>Nhập mua</th>
+                  <th>Trả tiền</th>
+                  <th>Nợ cuối</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nccRows.map((r) => (
+                  <tr
+                    key={r.supplierId}
+                    className="cursor-pointer border-t border-line/60"
+                    onClick={() => setSelectedSupplier(r.supplierId)}
+                  >
+                    <td className="py-1.5 font-semibold">{r.name}</td>
+                    <td className="num">{formatMoney(r.opening)}</td>
+                    <td className="num">{formatMoney(r.purchases)}</td>
+                    <td className="num text-ok">{formatMoney(r.payments)}</td>
+                    <td className="num font-bold text-warn">{formatMoney(r.closing)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {nccRows.length === 0 && <Empty text="Chưa có nhà cung cấp." />}
+          {sup && (
+            <Bento title={sup.name} subtitle={`Nợ hiện tại ${formatMoney(sup.totalDebt || 0)}`}>
+              {supPurchases.map((o) => (
+                <div key={o.id} className="flex justify-between text-sm">
+                  <span>{o.code} · {o.materialName}</span>
+                  <span className="num">{formatMoney(o.lineTotal)}</span>
+                </div>
+              ))}
+              {supPurchases.length === 0 && <Empty text="Chưa có đơn chốt." />}
+            </Bento>
+          )}
+        </div>
+      )}
+
+      {tab === 'don' && (
+        <Bento title="Theo dõi đơn bán" subtitle="Giá trị đơn − sl SX × đơn giá. Còn lại được âm khi SX vượt.">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="pb-1">Đơn</th>
+                  <th>Giá trị đơn</th>
+                  <th>Đã thực hiện</th>
+                  <th>Còn lại</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trackRows.map((r) => (
+                  <tr key={r.orderId} className="border-t border-line/60">
+                    <td className="py-1.5">{r.code}</td>
+                    <td className="num">{formatMoney(r.orderValue)}</td>
+                    <td className="num">{formatMoney(r.fulfilledValue)}</td>
+                    <td className={`num font-bold ${r.remainingValue < 0 ? 'text-danger' : 'text-warn'}`}>
+                      {formatMoney(r.remainingValue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {trackRows.length === 0 && <Empty text="Chưa có đơn bán." />}
+        </Bento>
       )}
     </div>
   )

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>An Phát — Tài liệu rà soát toàn hệ thống</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 14mm 18mm 14mm;
+      @bottom-center {
+        content: "An Phát · Rà soát hệ thống · 09/09/2026  ·  trang " counter(page);
+        font-size: 9px;
+        color: #64748b;
+        font-family: "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: #0f172a;
+    }
+    h1 {
+      font-size: 22px;
+      margin: 0 0 6px;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 15.5px;
+      margin: 22px 0 8px;
+      padding: 6px 10px;
+      background: #0f172a;
+      color: #fff;
+      border-radius: 6px;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 13px;
+      margin: 16px 0 6px;
+      color: #0f4c5c;
+      border-bottom: 1px solid #dbe4ea;
+      padding-bottom: 3px;
+      page-break-after: avoid;
+    }
+    p { margin: 0 0 8px; }
+    ul, ol { margin: 4px 0 10px; padding-left: 1.25rem; }
+    li { margin: 2px 0; }
+    strong { font-weight: 700; }
+    code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10.5px;
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #0f766e;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10.2px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      page-break-inside: avoid;
+      margin: 6px 0 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 6px 0 12px;
+      font-size: 10.8px;
+      page-break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 5px 7px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #e2e8f0; font-weight: 700; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .cover {
+      border: 2px solid #0f172a;
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 16px;
+    }
+    .meta { color: #475569; font-size: 11px; margin: 0 0 4px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+    .tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .ok { background: #d1fae5; color: #065f46; }
+    .todo { background: #fef3c7; color: #92400e; }
+    .chg { background: #dbeafe; color: #1e3a8a; }
+    .note {
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin: 8px 0 12px;
+    }
+    .check li { margin: 4px 0; }
+    .flow {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <h1>An Phát — Tài liệu rà soát toàn hệ thống</h1>
+    <p class="meta">Ngày 09/09/2026 · Dùng để đọc và bắt lỗi trước khi viết code phần Mua hàng / Sản xuất.</p>
+    <div class="legend">
+      <span class="tag ok">[ĐÃ CÓ] đang chạy trên app</span>
+      <span class="tag todo">[SẼ LÀM] đã thống nhất, chưa làm</span>
+      <span class="tag chg">[ĐỔI] app cũ sẽ đổi khi làm SX</span>
+    </div>
+  </div>
+
+  <h2>A. Bức tranh chung</h2>
+  <p>Bốn hạng mục: <strong>Mua hàng · Kho · Sản xuất · Bán hàng</strong>.</p>
+  <pre class="flow">Nhà cung cấp          Kho vật liệu           Thành phẩm              Khách hàng
+     │                     │                     │                       │
+     │  chốt đơn mua       │                     │                       │
+     │  → ghi NỢ NCC       │                     │                       │
+     │                     │                     │                       │
+     │  nhận hàng ─────────► cộng TỒN            │                       │
+     │                     │                     │                       │
+     │  chuyển tiền        │                     │                       │
+     │  → giảm NỢ NCC      │                     │                       │
+     │                     │  chốt lệnh SX       │                       │
+     │                     │  → trừ TỒN ─────────► (không nhập kho)       │
+     │                     │                     │                       │
+     │                     │                     │   gắn đơn bán ─────────► cộng “đã thực hiện”
+     │                     │                     │                       │
+     │                     │                     │         chốt đơn bán ─► ghi NỢ KHÁCH
+     │                     │                     │         (không trừ kho) [ĐỔI]
+     │                     │                     │                       │
+     │                     │  nhập kho lẻ ───────► cộng TỒN (không bắt buộc đơn mua)</pre>
+  <p>Kho <strong>chỉ chứa vật liệu</strong>. Thành phẩm (BTN…) trộn xong giao/dùng luôn, không có kho thành phẩm.</p>
+
+  <h2>B. Người dùng và quyền <span class="tag ok">ĐÃ CÓ</span></h2>
+  <table>
+    <tr><th>Vai trò</th><th>Việc được làm</th></tr>
+    <tr><td>Superadmin</td><td>Tất cả + xóa vật liệu, mở khóa đơn, xem nhật ký sửa</td></tr>
+    <tr><td>Admin</td><td>Tạo/sửa đơn, kho, cài đặt (trừ một số xóa)</td></tr>
+    <tr><td>Viewer</td><td>Chỉ xem (Tổng quan, Đơn hàng, Kho). <span class="tag todo">SẼ LÀM</span> xem thêm Mua hàng, Sản xuất, sổ NCC — không bấm ghi</td></tr>
+  </table>
+  <p>Tài khoản khóa (<code>active = false</code>) không vào được hệ thống.</p>
+
+  <h2>C. Cài đặt (danh mục)</h2>
+  <h3>C.1 Vật liệu <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Mỗi vật liệu: tên, mô tả, đơn vị, tồn, giá vốn bình quân, mức cảnh báo sắp hết, bật/tắt.</p>
+  <p>Phân loại tồn (chỉ cảnh báo, không chặn):</p>
+  <ul>
+    <li>Tồn = 0 → <strong>Đã hết</strong></li>
+    <li>0 &lt; tồn ≤ mức cảnh báo → <strong>Sắp hết</strong></li>
+    <li>Tồn &gt; mức cảnh báo → ổn</li>
+  </ul>
+
+  <h3>C.2 Đơn vị và quy đổi <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Đơn vị mặc định: Tấn, Kg, Khối, Lít, Thùng, Bao. Admin thêm đơn vị tùy chỉnh.</p>
+  <p>Quy đổi: 1 đơn vị nguồn = <code>factor</code> đơn vị đích (ví dụ 1 Tấn = 1000 Kg). Dùng để <strong>hiện tồn 2 đơn vị</strong>. Tính mua / SX / trừ kho theo <strong>đơn vị lưu của vật liệu</strong> (đơn vị nhập).</p>
+
+  <h3>C.3 Sản phẩm / thành phẩm <span class="tag ok">ĐÃ CÓ</span> <span class="tag chg">ĐỔI</span></h3>
+  <p><strong>Hiện tại:</strong> công thức “mỗi 1 đơn vị thành phẩm cần X vật liệu” (<code>quantityPerUnit</code>). Chốt đơn bán đang trừ kho theo công thức này.</p>
+  <p><strong>Sau này</strong> <span class="tag todo">SẼ LÀM</span>: mỗi thành phẩm có <strong>định mức sản xuất theo %</strong>. Vật liệu chọn từ Kho. Mỗi dòng:</p>
+  <table>
+    <tr><th>Trường</th><th>Ý nghĩa</th></tr>
+    <tr><td>Vật liệu</td><td>Chọn từ danh mục Kho</td></tr>
+    <tr><td>Kiểu tính</td><td>Nhựa / Đá / Tỷ lệ (dầu, than) / Nhập tay (MC, nhũ)</td></tr>
+    <tr><td>%</td><td>Số người nhập. <code>5.2</code> nghĩa là <strong>5,2%</strong> → trong công thức nhân <code>5.2 / 100</code></td></tr>
+    <tr><td>Hệ số đá</td><td>Mặc định 1,03; chỉ dùng cho dòng kiểu Đá; sửa được</td></tr>
+  </table>
+  <p>Công thức cũ (<code>quantityPerUnit</code>) giữ để đọc dữ liệu cũ, <strong>không còn trừ kho</strong>.</p>
+
+  <h3>C.4 Khách hàng <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Tên, MST, địa chỉ, SĐT, email, ghi chú. Cache: <code>totalDebt</code> (còn nợ), <code>totalPurchased</code> (tổng đã mua).</p>
+
+  <h3>C.5 Nhà cung cấp <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Giống khách, thêm:</p>
+  <ul>
+    <li><code>openingDebt</code> = nợ cũ trước khi dùng app (mặc định 0)</li>
+    <li><code>openingAt</code> = ngày mốc nợ cũ</li>
+    <li><code>pendingCarry</code> = số dư đang chờ cộng vào đơn mua kế (dương = còn nợ, âm = trả thừa)</li>
+  </ul>
+  <p>Chỉ xóa NCC khi không còn đơn mua. Nợ cũ chỉ sửa khi chưa có đơn đã chốt (Superadmin sửa được sau đó).</p>
+
+  <h2>D. Mua hàng <span class="tag todo">SẼ LÀM</span></h2>
+  <h3>D.1 Một đơn mua là gì</h3>
+  <p><strong>Một NCC + đúng một vật liệu</strong> (chọn từ list Kho). Không nhiều dòng. Không VAT / chiết khấu.</p>
+  <table>
+    <tr><th>Trường</th><th>Ý nghĩa</th></tr>
+    <tr><td>Mã</td><td><code>MHyyMMdd-xxxx</code> (ví dụ MH260909-4821)</td></tr>
+    <tr><td>Sl đặt</td><td>Số lượng đặt, &gt; 0</td></tr>
+    <tr><td>Đơn vị</td><td>Lấy từ vật liệu, không sửa trên đơn</td></tr>
+    <tr><td>Đơn giá</td><td>Người nhập</td></tr>
+    <tr><td>Trạng thái</td><td>Nháp / Đã chốt / Đã đóng / Huỷ</td></tr>
+  </table>
+
+  <h3>D.2 Công thức trên một đơn</h3>
+  <ul>
+    <li><code>Q</code> = sl đặt</li>
+    <li><code>P</code> = đơn giá</li>
+    <li><code>C_in</code> = số dư <strong>chuyển vào</strong> từ đơn trước (có thể âm)</li>
+    <li><code>C_out</code> = số dư <strong>đã chuyển đi</strong> khi đóng đơn (0 nếu không chuyển)</li>
+    <li><code>Pay_1, Pay_2, …</code> = từng lần chuyển tiền</li>
+    <li><code>Nhan_1, Nhan_2, …</code> = từng lần nhận hàng</li>
+  </ul>
+  <pre>Thành tiền          = Q × P
+Tổng tiền đơn       = Thành tiền + C_in
+Tiền đã chuyển      = Pay_1 + Pay_2 + …
+Còn lại (tiền)      = Tổng tiền đơn − Tiền đã chuyển − C_out
+
+Sl đã nhận          = Nhan_1 + Nhan_2 + …
+Còn nhận            = Q − Sl đã nhận</pre>
+  <p><strong>Ý nghĩa còn lại:</strong> &gt; 0 còn nợ trên đơn · = 0 hết · &lt; 0 trả thừa.</p>
+  <p><strong>Ràng buộc:</strong> không nhận vượt sl đặt (mỗi lần nhận &gt; 0 và ≤ còn nhận). Cho phép chuyển tiền vượt tổng tiền đơn.</p>
+
+  <h3>D.3 Ví dụ số — chưa có số dư chuyển</h3>
+  <p>Đặt 5 tấn đá, đơn giá 2.000.000.</p>
+  <pre>Thành tiền     = 5 × 2.000.000 = 10.000.000
+Tổng tiền đơn  = 10.000.000 + 0 = 10.000.000</pre>
+  <p>Nhận 3 tấn, chuyển 4.000.000:</p>
+  <pre>Sl đã nhận     = 3
+Còn nhận       = 5 − 3 = 2
+Đã chuyển      = 4.000.000
+Còn lại        = 10.000.000 − 4.000.000 − 0 = 6.000.000</pre>
+  <p>Kho: tồn đá <strong>+3</strong>. Giá vốn bình quân cập nhật (mục E.3).</p>
+
+  <h3>D.4 Trạng thái và việc được phép</h3>
+  <table>
+    <tr><th></th><th>Nháp</th><th>Đã chốt</th><th>Đã đóng</th><th>Huỷ</th></tr>
+    <tr><td>Vào sổ nợ NCC</td><td>Không</td><td>Có</td><td>Có (số dư đã xử lý)</td><td>Không</td></tr>
+    <tr><td>Nhận hàng</td><td>Không</td><td>Có</td><td>Không</td><td>Không</td></tr>
+    <tr><td>Chuyển tiền</td><td>Có (chưa vào sổ NCC)</td><td>Có</td><td>Không</td><td>Không</td></tr>
+    <tr><td>Sửa sl / giá</td><td>Có</td><td>Chỉ khi chưa nhận hàng</td><td>Không</td><td>Không</td></tr>
+  </table>
+  <ul>
+    <li><strong>Lưu nháp:</strong> chưa ghi nợ. Chưa lấy số dư chờ của NCC.</li>
+    <li><strong>Chốt:</strong> ghi nợ NCC tăng đúng <strong>thành tiền</strong> (<code>Q × P</code>). Lấy <code>pendingCarry</code> của NCC (nếu có) thành <code>C_in</code>. Các lần chuyển lúc nháp vào sổ theo ngày chuyển gốc. Ngày chốt = mốc “nhập mua” trên sổ kỳ.</li>
+    <li><strong>Huỷ:</strong> chỉ khi chưa nhận hàng. Hoàn nợ đã ghi. Nếu đơn đã hút <code>pendingCarry</code>, trả lại NCC.</li>
+    <li>Mở lại đơn đóng: chỉ Superadmin.</li>
+  </ul>
+  <p>Hai người chốt hai đơn cùng lúc: ai ghi NCC trước lấy hết số dư chờ, đơn kia nhận 0.</p>
+
+  <h3>D.5 Nhận hàng → kho</h3>
+  <p>Mỗi lần nhận <code>n</code> (0 &lt; n ≤ còn nhận):</p>
+  <pre>Cộng tồn vật liệu  += n
+Tiền lô nhập (để tính giá vốn) = n × P</pre>
+  <p>Phiếu nhập gắn mã đơn mua + tên NCC. <strong>Nhập kho lẻ</strong> (màn Kho) vẫn dùng, không bắt buộc đơn mua, không ghi sổ NCC.</p>
+
+  <h3>D.6 Đóng đơn và chuyển số dư</h3>
+  <p>Chỉ đóng đơn đang <strong>đã chốt</strong>.</p>
+  <ul>
+    <li>Nếu còn lại = 0: đóng, không hỏi.</li>
+    <li>Nếu còn lại ≠ 0: hỏi <strong>Chuyển số dư sang đơn hàng sau?</strong></li>
+  </ul>
+  <p><strong>Chọn Có</strong></p>
+  <pre>C_out = Tổng tiền đơn − Tiền đã chuyển     (chưa trừ C_out)
+Còn lại sau đóng = Tổng − đã chuyển − C_out = 0
+pendingCarry của NCC += C_out</pre>
+  <p>Đơn mua <strong>cùng NCC</strong> khi được <strong>chốt</strong> tiếp theo:</p>
+  <pre>C_in của đơn mới = pendingCarry
+pendingCarry     = 0
+Tổng tiền đơn mới = (Q_mới × P_mới) + C_in</pre>
+  <p><strong>Chọn Không</strong></p>
+  <pre>C_out = 0
+Đơn đóng, còn lại giữ nguyên trên đơn này
+Đơn sau không bị cộng
+Nợ NCC không đổi</pre>
+  <p>Chuyển số dư <strong>chỉ đổi đơn nào giữ nợ</strong>, không tạo lần “nhập mua” mới trên sổ.</p>
+
+  <h3>D.7 Ví dụ — chuyển số dư</h3>
+  <p><strong>Đơn 1:</strong> thành tiền 10.000.000, đã chuyển 7.000.000, đóng + chuyển.</p>
+  <pre>C_out          = 3.000.000
+Còn lại đơn 1  = 0
+pendingCarry   = 3.000.000</pre>
+  <p><strong>Đơn 2</strong> cùng NCC, đặt 4 tấn × 2.000.000 = 8.000.000, chốt:</p>
+  <pre>C_in            = 3.000.000
+Tổng tiền đơn 2 = 8.000.000 + 3.000.000 = 11.000.000</pre>
+  <p>Trên <strong>sổ kỳ</strong>: nhập mua đơn 2 chỉ tính <strong>8.000.000</strong>, không tính 3.000.000 (đã tính ở đơn 1).</p>
+
+  <h3>D.8 Sổ nhà cung cấp theo kỳ <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Kỳ [từ, đến] (ngày / tuần / tháng / năm). Chỉ tính đơn <strong>đã chốt</strong> hoặc <strong>đã đóng</strong> (bỏ nháp, huỷ).</p>
+  <pre>Mua trước kỳ   = tổng (Q × P) các đơn chốt trước ngày “từ”
+Trả trước kỳ   = tổng lần chuyển có ngày trước “từ”
+Nợ cũ          = openingDebt nếu openingAt &lt; “từ”, không thì 0
+
+Nợ đầu kỳ      = Nợ cũ + Mua trước kỳ − Trả trước kỳ
+Nhập mua       = tổng (Q × P) các đơn chốt trong kỳ     ← không cộng C_in, C_out
+Trả tiền       = tổng lần chuyển trong kỳ
+Nợ cuối kỳ     = Nợ đầu + Nhập mua − Trả tiền</pre>
+  <p>Nợ hiện tại trên NCC (mọi thời điểm):</p>
+  <pre>totalDebt = openingDebt + tổng (Q × P) đơn chốt/đóng − tổng đã chuyển</pre>
+  <p><code>pendingCarry</code> <strong>không</strong> cộng thêm vào <code>totalDebt</code> (đã nằm trong mua − trả của đơn nguồn).</p>
+
+  <h2>E. Kho</h2>
+  <h3>E.1 Việc làm tồn thay đổi</h3>
+  <table>
+    <tr><th>Việc</th><th>Tồn</th></tr>
+    <tr><td>Nhận hàng đơn mua <span class="tag todo">SẼ LÀM</span></td><td>+ sl nhận</td></tr>
+    <tr><td>Nhập kho lẻ <span class="tag ok">ĐÃ CÓ</span></td><td>+ sl nhập</td></tr>
+    <tr><td>Chốt lệnh SX <span class="tag todo">SẼ LÀM</span></td><td>− sl trừ thực tế</td></tr>
+    <tr><td>Chốt đơn bán <span class="tag chg">ĐỔI</span></td><td><strong>Không đổi</strong> (cũ đang trừ)</td></tr>
+    <tr><td>Sửa tồn tay trên thẻ kho <span class="tag ok">ĐÃ CÓ</span></td><td>Sửa thẳng — dễ lệch sổ kỳ nếu không có phiếu</td></tr>
+  </table>
+
+  <h3>E.2 Cảnh báo tồn <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Xem C.1. Không tự chặn nhập/SX (SX chỉ <strong>cảnh báo</strong> khi thiếu).</p>
+
+  <h3>E.3 Giá vốn bình quân khi nhập <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p><code>cost</code> trên phiếu = <strong>tổng tiền lô</strong>, không phải đơn giá.</p>
+  <pre>Tồn mới     = Tồn cũ + sl nhập
+Giá trị mới = (giá vốn cũ × tồn cũ) + tiền lô
+Giá vốn mới = Giá trị mới / Tồn mới     (tồn mới = 0 thì giá vốn = 0)</pre>
+  <p>Nhận đơn mua: <code>tiền lô = sl nhận × đơn giá trên đơn</code>. Xuất SX <strong>không</strong> đổi giá vốn, chỉ giảm tồn.</p>
+
+  <h3>E.4 Báo cáo tồn kho theo kỳ <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Mỗi vật liệu đang bật, kỳ [từ, đến]:</p>
+  <pre>Nhập (kỳ)     = tổng phiếu nhập trong kỳ
+Xuất (kỳ)     = tổng phiếu xuất trong kỳ
+Tồn cuối      = tồn hiện tại − nhập sau “đến” + xuất sau “đến”
+Tồn đầu       = Tồn cuối − Nhập (kỳ) + Xuất (kỳ)</pre>
+  <p>Kiểm tra: <code>Tồn đầu + Nhập − Xuất = Tồn cuối</code>.</p>
+  <p>Nguồn nhập: nhận đơn mua + nhập lẻ. Nguồn xuất: lệnh SX (và xuất khác nếu còn).</p>
+
+  <h2>F. Sản xuất <span class="tag todo">SẼ LÀM</span></h2>
+  <h3>F.1 Một lệnh SX là gì</h3>
+  <ul>
+    <li>Chọn <strong>một thành phẩm</strong> + <strong>sản lượng</strong> (cùng đơn vị sản phẩm).</li>
+    <li>Có thể <strong>gắn một dòng đơn bán</strong> (cùng thành phẩm) — hoặc không gắn.</li>
+    <li>Nạp định mức (%, kiểu tính, hệ số đá). Được sửa % / hệ số / sl nhập tay <strong>trên lệnh</strong> (không tự ghi đè định mức gốc).</li>
+    <li>Một đơn bán gắn được <strong>nhiều lệnh</strong> (SX nhiều đợt). Một lệnh chỉ gắn một dòng đơn.</li>
+    <li>Mã: <code>SXyyMMdd-xxxx</code>.</li>
+  </ul>
+
+  <h3>F.2 Quy ước %</h3>
+  <p>Người nhập <code>5.2</code> = <strong>5,2%</strong>.</p>
+  <pre>hệ_số_% = percent / 100
+ví dụ 5.2 → 0.052</pre>
+  <div class="note"><strong>Cần xác nhận khi rà:</strong> nếu nhà máy đang nhập sẵn 0,052 thì phải đổi quy ước này.</div>
+
+  <h3>F.3 Bốn kiểu tính</h3>
+  <p>Gọi <code>G</code> = sản lượng thành phẩm trên lệnh.</p>
+  <p><strong>Bước 1 — Nhựa</strong></p>
+  <pre>sl_nhựa_i = làm_tròn_2( G × percent_i / 100 )
+Tổng_nhựa = sl_nhựa_1 + sl_nhựa_2 + …     (thường một dòng)</pre>
+  <p>Nếu không có dòng nhựa: <code>Tổng_nhựa = 0</code>.</p>
+  <p><strong>Bước 2 — Dầu, than</strong></p>
+  <pre>sl = làm_tròn_2( G × percent / 100 )</pre>
+  <p>Không trừ nhựa. Không nhân hệ số đá.</p>
+  <p><strong>Bước 3 — Đá</strong></p>
+  <pre>Hệ_số_đá = ô nhập trên lệnh, mặc định 1.03, chỉ áp dụng đá
+sl_đá = làm_tròn_4( (G − Tổng_nhựa) × percent / 100 × Hệ_số_đá )</pre>
+  <p><strong>Bước 4 — MC, nhũ</strong></p>
+  <pre>sl = số người gõ, không làm tròn</pre>
+  <p><strong>Làm tròn:</strong> đá 4 chữ số thập phân · nhựa / dầu / than 2 chữ số · MC / nhũ giữ nguyên.</p>
+
+  <h3>F.4 Ví dụ đầy đủ (theo file)</h3>
+  <p><code>G = 10.000</code></p>
+  <table>
+    <tr><th>Vật liệu</th><th>Kiểu</th><th>%</th><th>Công thức</th><th>Kết quả</th></tr>
+    <tr><td>Nhựa đường</td><td>nhựa</td><td>5</td><td>10000 × 0,05</td><td><strong>500,00</strong></td></tr>
+    <tr><td>Đá 2×2</td><td>đá</td><td>40</td><td>(10000 − 500) × 0,40 × 1,03</td><td><strong>3.914,0000</strong></td></tr>
+    <tr><td>Than</td><td>tỷ lệ</td><td>1</td><td>10000 × 0,01</td><td><strong>100,00</strong></td></tr>
+    <tr><td>Diesel</td><td>tỷ lệ</td><td>0,8</td><td>10000 × 0,008</td><td><strong>80,00</strong></td></tr>
+    <tr><td>MC</td><td>nhập tay</td><td>—</td><td>gõ 12,345</td><td><strong>12,345</strong></td></tr>
+  </table>
+  <p>Đổi hệ số đá trên lệnh thành <code>1.00</code>:</p>
+  <pre>Đá 2×2 = (10000 − 500) × 0,40 × 1,00 = 3.800,0000</pre>
+  <p>Định mức gốc trên thành phẩm vẫn 1,03. Không trừ MC/nhũ khỏi <code>G</code>. Chỉ trừ <strong>nhựa</strong>.</p>
+
+  <h3>F.5 Chốt lệnh và kho</h3>
+  <ul>
+    <li><strong>Nháp:</strong> không trừ kho.</li>
+    <li><strong>Chốt:</strong> trừ từng vật liệu có sl &gt; 0.</li>
+    <li>Thiếu hàng: <strong>cảnh báo, vẫn cho chốt</strong>.</li>
+    <li>Tồn không âm:</li>
+  </ul>
+  <pre>Trừ thực tế = nhỏ hơn giữa (tồn hiện tại, nhu cầu)
+Phiếu xuất  = trừ thực tế
+Cột thiếu trên lệnh = nhu cầu − trừ thực tế</pre>
+  <p>Thành phẩm <strong>không</strong> cộng kho. Huỷ lệnh đã chốt: chỉ Superadmin, cộng trả kho đúng số đã trừ.</p>
+
+  <h3>F.6 Gắn đơn bán — giá trị đã thực hiện</h3>
+  <p>Khi gắn dòng đơn bán, lưu <strong>đơn giá dòng đó</strong> trên lệnh.</p>
+  <pre>Giá trị lệnh này = sản lượng lệnh × đơn giá dòng bán</pre>
+  <p>Không dùng thành tiền dòng đã cộng VAT/chiết khấu. Lệnh <strong>không gắn đơn</strong>: vẫn trừ kho; <strong>không</strong> cộng báo cáo theo dõi đơn.</p>
+
+  <h2>G. Bán hàng</h2>
+  <h3>G.1 Một đơn bán <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Nhiều dòng sản phẩm. Mỗi dòng:</p>
+  <pre>Nền             = sl × đơn giá
+Cộng thêm       = VAT hoặc “khác”: số tiền, hoặc % của Nền
+Trừ             = chiết khấu: số tiền, hoặc % của Nền
+Thành tiền dòng = Nền + VAT/khác − chiết khấu
+
+Tổng đơn        = cộng mọi thành tiền dòng
+Đã thu          = cộng các lần thanh toán
+                  (nếu chưa có lịch sử: lấy paidAmount + cọc cũ)
+Công nợ đơn     = max(0, Tổng đơn − Đã thu)</pre>
+  <p>Trạng thái <strong>theo tiền</strong> (trừ khi Huỷ):</p>
+  <pre>Chưa thu gì         → Draft
+Đã thu một phần     → Đang thực hiện
+Đã thu ≥ tổng đơn   → Hoàn thiện
+                    (so sánh có dung sai 0,5 đồng)</pre>
+  <p>Công nợ khách khi lưu đơn:</p>
+  <pre>Nợ khách mới = Nợ khách cũ − nợ đơn cũ + nợ đơn mới
+Đã mua       = Đã mua cũ − tổng đơn cũ + tổng đơn mới</pre>
+
+  <h3>G.2 Kho khi chốt đơn bán</h3>
+  <p><strong>Hiện tại</strong> <span class="tag ok">ĐÃ CÓ</span>: trừ kho theo <code>sl vật liệu = quantityPerUnit × sl dòng</code>. Thiếu thì <strong>chặn</strong> chốt.</p>
+  <p><strong>Sau khi có SX</strong> <span class="tag chg">ĐỔI</span>:</p>
+  <ul>
+    <li>Không trừ kho khi chốt / sửa trạng thái đơn bán</li>
+    <li>Không chặn chốt vì thiếu NVL</li>
+    <li>Đơn cũ đã trừ: giữ nguyên, không trừ thêm</li>
+  </ul>
+
+  <h3>G.3 Báo cáo theo dõi đơn hàng <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Mỗi đơn bán không huỷ:</p>
+  <pre>Giá trị đơn hàng     = tổng đơn (totalAmount)
+Giá trị đã thực hiện = tổng (sản lượng lệnh SX đã chốt gắn đơn × đơn giá đã lưu trên lệnh)
+Giá trị còn lại      = Giá trị đơn − Đã thực hiện</pre>
+  <ul>
+    <li>Còn lại <strong>dương</strong>: chưa làm đủ</li>
+    <li>Còn lại <strong>âm</strong>: SX vượt kế hoạch (cho phép)</li>
+    <li>Chưa có lệnh SX: đã thực hiện = 0, còn lại = giá trị đơn</li>
+  </ul>
+  <p><strong>Ví dụ:</strong> đơn 20.000.000, đơn giá 1.000.000/tấn.</p>
+  <ul>
+    <li>Lệnh 1: 10 tấn → đã thực hiện 10.000.000, còn lại 10.000.000</li>
+    <li>Lệnh 2: 15 tấn → đã thực hiện 25.000.000, còn lại <strong>−5.000.000</strong></li>
+  </ul>
+
+  <h2>H. Tổng kết (báo cáo)</h2>
+  <h3>H.1 Theo kỳ — bán <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Kỳ: ngày (0:00–23:59) / tuần (T2–CN) / tháng / năm. Đơn trong kỳ (bỏ nháp, huỷ):</p>
+  <pre>Doanh số      = tổng totalAmount
+Đã thanh toán = tổng đã thu
+Công nợ kỳ    = tổng nợ trên các đơn kỳ đó
+Công nợ chung = tổng totalDebt mọi khách</pre>
+
+  <h3>H.2 Khách hàng <span class="tag ok">ĐÃ CÓ</span></h3>
+  <p>Danh sách + nợ. Chi tiết: đã mua, công nợ, đơn đã mua, phiếu thu đã ghi.</p>
+
+  <h3>H.3 Nhà cung cấp <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Bảng: NCC | Nợ đầu | Nhập mua | Trả tiền | Nợ cuối. Bấm một NCC: phát sinh trong kỳ. Công thức: mục D.8.</p>
+
+  <h3>H.4 Kho theo kỳ <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Cột: Vật liệu | Đầu | Nhập | Xuất | Cuối. Công thức: mục E.4.</p>
+
+  <h3>H.5 Theo dõi đơn bán <span class="tag todo">SẼ LÀM</span></h3>
+  <p>Cột: Đơn | Giá trị đơn | Đã thực hiện | Còn lại. Công thức: mục G.3.</p>
+
+  <h2>I. Menu sau này <span class="tag todo">SẼ LÀM</span></h2>
+  <p>Tổng quan · Bán hàng · Mua hàng · Sản xuất · Kho · Tổng kết · Cài đặt</p>
+  <p>Cài đặt thêm tab <strong>Nhà cung cấp</strong>. Sản phẩm thêm định mức % / kiểu tính.</p>
+
+  <h2>J. Việc không làm trong đợt này</h2>
+  <ul>
+    <li>Lệnh sản xuất kiểu “nhiều thành phẩm một lệnh”</li>
+    <li>Kho thành phẩm, xuất kho khi giao hàng</li>
+    <li>Đơn mua nhiều vật liệu, VAT đơn mua</li>
+    <li>Đổi bán hàng theo file bạn gửi sau (ngoài việc bỏ trừ kho)</li>
+    <li>Chuyển phiếu nhập kho lẻ cũ (contractor gõ tay) thành NCC</li>
+  </ul>
+
+  <h2>K. Checklist rà soát (đánh Đúng / Sai / Sửa)</h2>
+  <ol class="check">
+    <li>Một đơn mua = 1 NCC + 1 vật liệu.</li>
+    <li>Thành tiền mua = sl × đơn giá; không VAT.</li>
+    <li>Còn lại mua = tổng đơn (gồm số dư chuyển vào) − đã chuyển − số dư chuyển đi.</li>
+    <li>Nhận hàng mới cộng kho; chốt đơn mua chỉ ghi nợ, chưa cộng kho.</li>
+    <li>Cho chuyển tiền vượt; không cho nhận vượt sl đặt.</li>
+    <li>Đóng đơn: chọn chuyển số dư sang đơn sau (chờ nếu chưa có đơn) hoặc để trên đơn cũ.</li>
+    <li>Sổ NCC: nhập mua = thành tiền đơn chốt trong kỳ, <strong>không</strong> cộng số dư chuyển.</li>
+    <li><code>%</code> nhập 5.2 = 5,2% (÷ 100).</li>
+    <li>Đá = (sản lượng − sl nhựa) × % × hệ số (mặc định 1,03, sửa được), tròn 4 số.</li>
+    <li>Nhựa / dầu / than = sản lượng × %, tròn 2 số. Không trừ MC/nhũ khi tính đá.</li>
+    <li>MC, nhũ gõ tay, không làm tròn.</li>
+    <li>Chốt SX trừ kho; thiếu vẫn cho chốt; tồn không âm.</li>
+    <li>Thành phẩm không nhập kho.</li>
+    <li>Đơn bán không trừ kho.</li>
+    <li>Đã thực hiện đơn bán = sl SX × đơn giá dòng (không gồm VAT dòng). Còn lại được âm.</li>
+    <li>Báo cáo kho kỳ: đầu + nhập − xuất = cuối.</li>
+  </ol>
+</body>
+</html>

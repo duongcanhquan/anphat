@@ -122,6 +122,23 @@ service cloud.firestore {
       allow update, delete: if isSuper();
     }
 
+    match /suppliers/{id} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    match /purchaseOrders/{id} {
+      allow read: if isActive();
+      allow create, update: if isAdmin();
+      allow delete: if isSuper();
+    }
+
+    match /productionOrders/{id} {
+      allow read: if isActive();
+      allow create, update: if isAdmin();
+      allow delete: if isSuper();
+    }
+
     match /auditLogs/{id} {
       allow read: if isSuper() || isAdmin();
       allow create: if isAdmin();

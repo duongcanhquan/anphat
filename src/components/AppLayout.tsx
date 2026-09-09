@@ -8,6 +8,8 @@ import {
   Warehouse,
   Menu,
   X,
+  Truck,
+  Factory,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -18,15 +20,19 @@ import { Badge, Button } from './ui'
 const fullNav = [
   { to: '/', label: 'Tổng quan', short: 'Tổng quan', icon: LayoutDashboard, end: true },
   { to: '/ban-hang', label: 'Bán hàng', short: 'Bán hàng', icon: ShoppingCart },
+  { to: '/mua-hang', label: 'Mua hàng', short: 'Mua hàng', icon: Truck },
+  { to: '/san-xuat', label: 'Sản xuất', short: 'Sản xuất', icon: Factory },
   { to: '/kho', label: 'Kho', short: 'Kho', icon: Warehouse },
   { to: '/tong-ket', label: 'Tổng kết', short: 'Tổng kết', icon: BarChart3 },
   { to: '/cai-dat', label: 'Cài đặt', short: 'Cài đặt', icon: Settings },
 ]
 
-/** Viewer chỉ kiểm soát — 3 màn hình: Tổng quan, Đơn hàng, Kho */
+/** Viewer: xem kiểm soát, gồm mua và SX (chỉ đọc) */
 const viewerNav = [
   { to: '/', label: 'Tổng quan', short: 'Tổng quan', icon: LayoutDashboard, end: true },
   { to: '/ban-hang', label: 'Đơn hàng', short: 'Đơn hàng', icon: ShoppingCart },
+  { to: '/mua-hang', label: 'Mua hàng', short: 'Mua hàng', icon: Truck },
+  { to: '/san-xuat', label: 'Sản xuất', short: 'Sản xuất', icon: Factory },
   { to: '/kho', label: 'Kho', short: 'Kho', icon: Warehouse },
 ]
 

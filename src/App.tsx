@@ -8,6 +8,8 @@ import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { WarehousePage } from '@/pages/WarehousePage'
 import { SalesPage } from '@/pages/SalesPage'
+import { PurchasePage } from '@/pages/PurchasePage'
+import { ProductionPage } from '@/pages/ProductionPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ViewerHomePage, ViewerOrdersPage, ViewerWarehousePage } from '@/pages/ViewerPages'
@@ -108,6 +110,8 @@ export default function App() {
             >
               <Route path="/" element={<HomeByRole />} />
               <Route path="/ban-hang" element={<SalesByRole />} />
+              <Route path="/mua-hang" element={<PurchasePage />} />
+              <Route path="/san-xuat" element={<ProductionPage />} />
               <Route path="/kho" element={<WarehouseByRole />} />
               <Route path="/tong-ket" element={<ReportsByRole />} />
               <Route path="/cai-dat" element={<SettingsByRole />} />

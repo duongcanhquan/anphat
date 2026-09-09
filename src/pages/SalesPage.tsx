@@ -472,36 +472,6 @@ export function SalesPage() {
     [materialNeed],
   )
 
-  const shortageText = (list: typeof stockShortages) =>
-    list
-      .map((m) =>
-        m.missing
-          ? `${m.name} (không còn trong kho)`
-          : `${m.name} thiếu ${formatNumber(m.shortage)} ${m.stockUnit}`,
-      )
-      .join(', ')
-
-  /** Kiểm tra thiếu kho cho danh sách trừ kho của một đơn đã lưu */
-  const shortagesForDeduct = (
-    items: { materialId: string; materialName: string; unit: string; quantity: number }[],
-  ): string[] => {
-    const agg = new Map<string, { name: string; unit: string; qty: number }>()
-    for (const it of items) {
-      const cur = agg.get(it.materialId) || { name: it.materialName, unit: it.unit, qty: 0 }
-      cur.qty += it.quantity
-      agg.set(it.materialId, cur)
-    }
-    const out: string[] = []
-    for (const [id, v] of agg) {
-      if (!(v.qty > 0)) continue
-      const mat = materials.find((m) => m.id === id)
-      if (!mat) out.push(`${v.name} (không còn trong kho)`)
-      else if (v.qty > mat.stock + 0.000001)
-        out.push(`${mat.name} thiếu ${formatNumber(v.qty - mat.stock)} ${mat.unit}`)
-    }
-    return out
-  }
-
   const updateLine = (id: string, patch: Partial<OrderLine>) => {
     setLines((prev) =>
       prev.map((l) => {
@@ -631,7 +601,7 @@ export function SalesPage() {
     }
     setEditingOrder(order)
     setLines(
-      order.lines.map((l) => ({
+      (order.lines || []).map((l) => ({
         ...l,
         // Đồng bộ vật liệu về đơn vị sau quy đổi hiện hành (không có quy đổi → đơn vị nhập)
         items: l.items.map((i) => toPreferredUnitItem({ ...i }, materials, conversions)),
@@ -703,17 +673,7 @@ export function SalesPage() {
         status = statusFromPayment(totalAmount, finalPaid)
       }
 
-      const shouldDeduct =
-        status !== 'draft' && status !== 'huy' && !(editingOrder?.stockDeducted)
-
-      // Chặn chốt đơn khi kho không đủ nguyên liệu (đơn sẽ trừ kho)
-      if (shouldDeduct && stockShortages.length > 0) {
-        setMessage(
-          `Không thể chốt đơn — kho không đủ nguyên liệu: ${shortageText(stockShortages)}. Hãy nhập kho trước, hoặc lưu Draft (chưa trừ kho).`,
-        )
-        setBusy(false)
-        return
-      }
+      const shouldDeduct = false
 
       const finalContract = contractAmount > 0 ? contractAmount : totalAmount
 
@@ -865,38 +825,6 @@ export function SalesPage() {
       next = statusFromPayment(order.totalAmount, paid)
     }
     const patch: Partial<Order> = { status: next }
-    if (next !== 'draft' && next !== 'huy' && !order.stockDeducted) {
-      const deductItems = order.lines.flatMap((line) =>
-        line.items.map((item) => {
-          const mat = materials.find((m) => m.id === item.materialId)
-          const qtyConverted = item.quantityPerUnit * line.quantity
-          const qtyStock = mat
-            ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
-            : qtyConverted
-          return {
-            materialId: item.materialId,
-            materialName: item.materialName,
-            unit: mat?.unit || item.unit,
-            quantity: qtyStock,
-          }
-        }),
-      )
-      const lack = shortagesForDeduct(deductItems)
-      if (lack.length > 0) {
-        setMessage(`Không thể chuyển trạng thái — kho không đủ nguyên liệu: ${lack.join(', ')}. Hãy nhập kho trước.`)
-        return
-      }
-      if (deductItems.length > 0) {
-        await deductStock(deductItems, {
-          orderId: order.id,
-          orderCode: order.code,
-          createdBy: profile.id,
-          createdByName: profile.displayName,
-          note: `Xuất kho đơn ${order.code}`,
-        })
-      }
-      patch.stockDeducted = true
-    }
     await updateOrder(order.id, patch)
     await createAuditLog({
       entityType: 'order',
@@ -943,41 +871,6 @@ export function SalesPage() {
         debt: nextDebt,
         status: nextStatus,
       }
-      if (nextStatus !== 'draft' && nextStatus !== 'huy' && !detailOrder.stockDeducted) {
-        const deductItems = detailOrder.lines.flatMap((line) =>
-          line.items.map((item) => {
-            const mat = materials.find((m) => m.id === item.materialId)
-            const qtyConverted = item.quantityPerUnit * line.quantity
-            const qtyStock = mat
-              ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
-              : qtyConverted
-            return {
-              materialId: item.materialId,
-              materialName: item.materialName,
-              unit: mat?.unit || item.unit,
-              quantity: qtyStock,
-            }
-          }),
-        )
-        const lack = shortagesForDeduct(deductItems)
-        if (lack.length > 0) {
-          setMessage(
-            `Không thể ghi thanh toán — đơn sẽ trừ kho nhưng kho không đủ nguyên liệu: ${lack.join(', ')}. Hãy nhập kho trước.`,
-          )
-          setDetailPayBusy(false)
-          return
-        }
-        if (deductItems.length > 0) {
-          await deductStock(deductItems, {
-            orderId: detailOrder.id,
-            orderCode: detailOrder.code,
-            createdBy: profile.id,
-            createdByName: profile.displayName,
-            note: `Xuất kho đơn ${detailOrder.code}`,
-          })
-        }
-        patch.stockDeducted = true
-      }
       const cust = customers.find((c) => c.id === detailOrder.customerId)
       await updateOrder(detailOrder.id, patch)
       if (cust) {
@@ -1020,40 +913,6 @@ export function SalesPage() {
       expected !== 'draft'
     ) {
       const patch: Partial<Order> = { status: expected }
-      if (!order.stockDeducted) {
-        const deductItems = order.lines.flatMap((line) =>
-          line.items.map((item) => {
-            const mat = materials.find((m) => m.id === item.materialId)
-            const qtyConverted = item.quantityPerUnit * line.quantity
-            const qtyStock = mat
-              ? toStockUnitQuantity(qtyConverted, item.unit, mat, conversions)
-              : qtyConverted
-            return {
-              materialId: item.materialId,
-              materialName: item.materialName,
-              unit: mat?.unit || item.unit,
-              quantity: qtyStock,
-            }
-          }),
-        )
-        const lack = shortagesForDeduct(deductItems)
-        if (lack.length > 0) {
-          // Không tự trừ kho khi thiếu — chỉ mở chi tiết kèm cảnh báo
-          setDetailOrder(order)
-          setMessage(`Đơn ${order.code} có thanh toán nhưng kho không đủ nguyên liệu để trừ: ${lack.join(', ')}.`)
-          return
-        }
-        if (deductItems.length > 0) {
-          await deductStock(deductItems, {
-            orderId: order.id,
-            orderCode: order.code,
-            createdBy: profile.id,
-            createdByName: profile.displayName,
-            note: `Xuất kho đơn ${order.code}`,
-          })
-        }
-        patch.stockDeducted = true
-      }
       await updateOrder(order.id, patch)
       setDetailOrder({ ...order, ...patch })
       setMessage(`Đã cập nhật ${order.code}: có thanh toán → ${ORDER_STATUS_LABELS[expected]}`)
@@ -1232,14 +1091,14 @@ export function SalesPage() {
           </div>
 
           <div className="min-w-0 space-y-3 lg:col-span-2">
-            <Bento title="Vật liệu cần xuất kho">
+            <Bento title="Vật liệu (tham khảo — trừ kho khi chốt lệnh Sản xuất)">
               {materialNeed.length === 0 ? (
                 <Empty text="Chọn sản phẩm để xem vật liệu." />
               ) : (
                 <div className="space-y-2">
                   {stockShortages.length > 0 && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                      Kho không đủ nguyên liệu — không thể chốt đơn. Hãy nhập kho trước.
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                      Kho đang thiếu so với định mức cũ. Trừ kho thực tế nằm ở menu Sản xuất.
                     </div>
                   )}
                   {materialNeed.map((m) => {
@@ -1386,31 +1245,18 @@ export function SalesPage() {
 
             {writable && (
               <div className="grid gap-2">
-                {stockShortages.length > 0 && !editingOrder?.stockDeducted && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    <p className="font-semibold">Kho không đủ nguyên liệu — không thể chốt đơn.</p>
-                    <p className="mt-1 text-xs">
-                      {shortageText(stockShortages)}.{' '}
-                      {paidWithPending > 0
-                        ? 'Hãy nhập kho trước, hoặc bỏ thanh toán để lưu Draft.'
-                        : 'Hãy nhập kho trước, hoặc lưu Draft (chưa trừ kho).'}
-                    </p>
-                  </div>
-                )}
                 <Button
                   size="lg"
-                  disabled={busy || (stockShortages.length > 0 && !editingOrder?.stockDeducted)}
+                  disabled={busy}
                   onClick={() => confirmOrder(false)}
                 >
                   {busy
                     ? 'Đang lưu…'
-                    : stockShortages.length > 0 && !editingOrder?.stockDeducted
-                      ? 'Thiếu nguyên liệu — không thể chốt'
-                      : editingOrder
-                        ? `Lưu đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
-                        : paidWithPending > 0
-                          ? `Chốt đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
-                          : 'Chốt đơn hàng'}
+                    : editingOrder
+                      ? `Lưu đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
+                      : paidWithPending > 0
+                        ? `Chốt đơn · ${ORDER_STATUS_LABELS[orderStatus]}`
+                        : 'Chốt đơn hàng'}
                 </Button>
                 {paidWithPending <= 0 && (
                   <Button
@@ -1649,7 +1495,7 @@ export function SalesPage() {
               )}
             </div>
 
-            {detailOrder.lines.map((l) => (
+            {(detailOrder.lines || []).map((l) => (
               <div key={l.id} className="rounded-2xl bg-surface px-3 py-3">
                 <p className="font-semibold">{l.formulaName} × {formatNumber(l.quantity)} {normalizeUnit(l.unit)}</p>
                 {l.recipeLabel && <p className="text-xs text-muted">Công thức: {l.recipeLabel}</p>}
