@@ -133,7 +133,19 @@ service cloud.firestore {
       allow delete: if isSuper();
     }
 
+    match /purchaseReceipts/{id} {
+      allow read: if isActive();
+      allow create, update: if isAdmin();
+      allow delete: if isSuper();
+    }
+
     match /productionOrders/{id} {
+      allow read: if isActive();
+      allow create, update: if isAdmin();
+      allow delete: if isSuper();
+    }
+
+    match /salesDeliveries/{id} {
       allow read: if isActive();
       allow create, update: if isAdmin();
       allow delete: if isSuper();

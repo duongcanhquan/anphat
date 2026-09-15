@@ -8,13 +8,14 @@ import {
   createConfirmedProductionOrder,
   createProductionOrder,
   generateProductionCode,
+  watchCustomers,
   watchFormulas,
   watchMaterials,
   watchOrders,
   watchProductionOrders,
 } from '@/lib/store'
 import { actualDeductQty, computeProduction } from '@/lib/production'
-import type { Formula, Material, Order, ProductionItem, ProductionOrder } from '@/types'
+import type { Customer, Formula, Material, Order, ProductionItem, ProductionOrder } from '@/types'
 import {
   PRODUCTION_CALC_LABELS,
   PRODUCTION_STATUS_LABELS,
@@ -23,7 +24,7 @@ import {
   normalizeOrderStatus,
   normalizeUnit,
 } from '@/types'
-import { formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
+import { formatDate, formatMoney, formatNumber, fromDateInputValue, toDateInputValue } from '@/lib/utils'
 
 export function ProductionPage() {
   const { profile } = useAuth()
@@ -41,7 +42,11 @@ export function ProductionPage() {
   const [formulaId, setFormulaId] = useState('')
   const [qty, setQty] = useState('')
   const [stoneFactor, setStoneFactor] = useState('1.03')
+  const [linkSales, setLinkSales] = useState(false)
   const [salesKey, setSalesKey] = useState('')
+  const [customerId, setCustomerId] = useState('')
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [producedAt, setProducedAt] = useState(() => toDateInputValue(Date.now()))
   const [note, setNote] = useState('')
   const [items, setItems] = useState<ProductionItem[]>([])
   const [manual, setManual] = useState<Record<string, string>>({})
@@ -52,7 +57,8 @@ export function ProductionPage() {
     const u2 = watchMaterials(setMaterials)
     const u3 = watchOrders(setSalesOrders)
     const u4 = watchProductionOrders(setRuns)
-    return () => { u1(); u2(); u3(); u4() }
+    const u5 = watchCustomers(setCustomers)
+    return () => { u1(); u2(); u3(); u4(); u5() }
   }, [])
 
   useEffect(() => {
@@ -79,7 +85,17 @@ export function ProductionPage() {
   }, [items, percents, manual, G, factor])
 
   const salesOptions = useMemo(() => {
-    const rows: { key: string; label: string; orderId: string; lineId: string; code: string; unitPrice: number; formulaId: string }[] = []
+    const rows: {
+      key: string
+      label: string
+      orderId: string
+      lineId: string
+      code: string
+      unitPrice: number
+      formulaId: string
+      customerId: string
+      customerName: string
+    }[] = []
     for (const o of salesOrders) {
       if (normalizeOrderStatus(o.status) === 'huy') continue
       for (const l of o.lines || []) {
@@ -91,6 +107,8 @@ export function ProductionPage() {
           code: o.code,
           unitPrice: l.unitPrice,
           formulaId: l.formulaId,
+          customerId: o.customerId || '',
+          customerName: o.customerName || '',
         })
       }
     }
@@ -115,7 +133,20 @@ export function ProductionPage() {
     })
     setPercents(p)
     setManual(m)
-    setSalesKey('')
+  }
+
+  const onPickSales = (key: string) => {
+    const sales = salesOptions.find((s) => s.key === key)
+    if (!sales) {
+      setSalesKey('')
+      return
+    }
+    if (sales.formulaId && sales.formulaId !== formulaId) {
+      loadFormula(sales.formulaId)
+    }
+    setSalesKey(key)
+    setLinkSales(true)
+    if (sales.customerId) setCustomerId(sales.customerId)
   }
 
   const shortages = computed.lines
@@ -150,8 +181,10 @@ export function ProductionPage() {
     setBusy(true)
     setMsg('')
     try {
-      const sales = salesOptions.find((s) => s.key === salesKey)
+      const sales = linkSales ? salesOptions.find((s) => s.key === salesKey) : undefined
+      const cust = customers.find((c) => c.id === (sales?.customerId || customerId))
       const now = Date.now()
+      const at = fromDateInputValue(producedAt)
       const lines = computed.lines.map((l) => ({
         id: l.id,
         materialId: l.materialId,
@@ -163,11 +196,13 @@ export function ProductionPage() {
         deductedQty: 0,
       }))
       const payload = {
-        code: generateProductionCode(),
+        code: generateProductionCode(new Date(at)),
         formulaId: f.id,
         formulaName: f.name,
         quantity: G,
         stoneFactor: factor,
+        customerId: cust?.id || sales?.customerId || '',
+        customerName: cust?.name || sales?.customerName || '',
         salesOrderId: sales?.orderId || '',
         salesOrderCode: sales?.code || '',
         salesOrderLineId: sales?.lineId || '',
@@ -176,6 +211,7 @@ export function ProductionPage() {
         status: 'draft' as const,
         stockDeducted: false,
         confirmedAt: undefined,
+        producedAt: at,
         note: note.trim(),
         createdAt: now,
         updatedAt: now,
@@ -255,7 +291,16 @@ export function ProductionPage() {
         subtitle="Định mức % · trừ kho vật liệu · gắn đơn bán (không bắt buộc)"
         action={
           writable ? (
-            <Button onClick={() => { setFormulaId(''); setQty(''); setItems([]); setOpen(true) }}>
+            <Button onClick={() => {
+              setFormulaId('')
+              setQty('')
+              setItems([])
+              setCustomerId('')
+              setLinkSales(false)
+              setSalesKey('')
+              setProducedAt(toDateInputValue(Date.now()))
+              setOpen(true)
+            }}>
               <Plus size={18} /> Lệnh SX mới
             </Button>
           ) : undefined
@@ -278,7 +323,8 @@ export function ProductionPage() {
                 <div>
                   <p className="font-semibold">{r.formulaName} × {formatNumber(r.quantity)}</p>
                   <p className="text-xs text-muted">
-                    {r.code} · {formatDateTime(r.createdAt)}
+                    {r.code} · {formatDate(r.producedAt || r.createdAt)}
+                    {r.customerName ? ` · ${r.customerName}` : ''}
                     {r.salesOrderCode ? ` · Đơn ${r.salesOrderCode}` : ' · Không gắn đơn'}
                   </p>
                 </div>
@@ -299,7 +345,11 @@ export function ProductionPage() {
           <SearchableSelect
             label="Thành phẩm"
             value={formulaId}
-            onChange={loadFormula}
+            onChange={(id) => {
+              loadFormula(id)
+              setSalesKey('')
+              setLinkSales(false)
+            }}
             options={formulas.filter((f) => f.active !== false).map((f) => ({
               value: f.id,
               label: f.name,
@@ -312,12 +362,36 @@ export function ProductionPage() {
             <Input label="Sản lượng" type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required />
             <Input label="Hệ số đá" type="number" step="any" value={stoneFactor} onChange={(e) => setStoneFactor(e.target.value)} />
           </div>
-          <Select label="Gắn đơn bán (không bắt buộc)" value={salesKey} onChange={(e) => setSalesKey(e.target.value)}>
-            <option value="">Không gắn đơn</option>
-            {salesOptions.map((s) => (
-              <option key={s.key} value={s.key}>{s.label}</option>
-            ))}
-          </Select>
+          <Input label="Ngày sản xuất" type="date" value={producedAt} onChange={(e) => setProducedAt(e.target.value)} required />
+          <SearchableSelect
+            label="Khách hàng"
+            value={customerId}
+            onChange={setCustomerId}
+            options={customers.map((c) => ({ value: c.id, label: c.name }))}
+            placeholder="— Chọn khách (không bắt buộc) —"
+            searchPlaceholder="Tìm khách…"
+            disabled={linkSales && !!salesKey}
+          />
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              className="accent-accent size-4"
+              checked={linkSales}
+              onChange={(e) => {
+                setLinkSales(e.target.checked)
+                if (!e.target.checked) setSalesKey('')
+              }}
+            />
+            Theo đơn bán?
+          </label>
+          {linkSales && (
+            <Select label="Đơn bán / dòng SP" value={salesKey} onChange={(e) => onPickSales(e.target.value)}>
+              <option value="">— Chọn đơn —</option>
+              {salesOptions.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
+              ))}
+            </Select>
+          )}
           {items.length === 0 && formulaId && (
             <p className="text-sm text-warn">Thành phẩm chưa có định mức SX. Vào Cài đặt → Sản phẩm để thêm vật liệu (nhựa/đá/tỷ lệ/nhập tay).</p>
           )}
@@ -377,7 +451,11 @@ export function ProductionPage() {
               {PRODUCTION_STATUS_LABELS[detail.status]}
             </Badge>
             <p className="font-semibold">{detail.formulaName} × {formatNumber(detail.quantity)}</p>
-            <p className="text-sm text-muted">Hệ số đá {detail.stoneFactor} · {detail.salesOrderCode || 'Không gắn đơn'}</p>
+            <p className="text-sm text-muted">
+              Ngày {formatDate(detail.producedAt || detail.createdAt)} · Hệ số đá {detail.stoneFactor}
+              {detail.customerName ? ` · ${detail.customerName}` : ''}
+              {' · '}{detail.salesOrderCode || 'Không gắn đơn'}
+            </p>
             <div className="space-y-1 text-sm">
               {(detail.lines || []).map((l) => (
                 <div key={l.id} className="flex justify-between gap-2">

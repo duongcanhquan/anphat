@@ -383,10 +383,36 @@ export interface PurchasePayment {
 export interface PurchaseReceipt {
   id: string
   quantity: number
+  unitPrice?: number
+  lineTotal?: number
+  receiptAt?: number
   createdAt: number
   createdBy: string
   createdByName?: string
   stockEntryId?: string
+}
+
+/** Phiếu nhập mua thực tế (độc lập, có thể gắn đơn) */
+export interface PurchaseReceiptDoc {
+  id: string
+  code: string
+  purchaseOrderId?: string
+  purchaseOrderCode?: string
+  supplierId: string
+  supplierName: string
+  materialId: string
+  materialName: string
+  unit: WeightUnit
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  receiptAt: number
+  note: string
+  stockEntryId?: string
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  createdByName?: string
 }
 
 export interface PurchaseOrder {
@@ -397,8 +423,19 @@ export interface PurchaseOrder {
   materialId: string
   materialName: string
   unit: WeightUnit
+  /**
+   * Legacy / đồng bộ plannedWeight.
+   * Đơn mới: lưu plannedWeight; quantity = plannedWeight để tương thích.
+   */
   quantity: number
+  /** Số tiền đặt hàng (cam kết) */
+  orderAmount: number
+  /** Khối lượng kế hoạch — cơ sở trừ sl khi nhập thực tế */
+  plannedWeight: number
+  /** orderAmount / unitPrice (readonly khi lưu) */
+  plannedQty: number
   unitPrice: number
+  /** = orderAmount (tương thích sổ NCC) */
   lineTotal: number
   carriedIn: number
   carriedFromOrderId?: string
@@ -409,6 +446,29 @@ export interface PurchaseOrder {
   status: PurchaseStatus
   note: string
   orderAt: number
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  createdByName?: string
+}
+
+/** Phiếu xuất bán thực tế (có thể gắn đơn bán) */
+export interface SalesDelivery {
+  id: string
+  code: string
+  orderId?: string
+  orderCode?: string
+  orderLineId?: string
+  customerId: string
+  customerName: string
+  formulaId: string
+  formulaName: string
+  quantity: number
+  unit: WeightUnit
+  unitPrice: number
+  lineTotal: number
+  soldAt: number
+  note: string
   createdAt: number
   updatedAt: number
   createdBy: string
@@ -441,6 +501,8 @@ export interface ProductionOrder {
   formulaName: string
   quantity: number
   stoneFactor: number
+  customerId?: string
+  customerName?: string
   salesOrderId?: string
   salesOrderCode?: string
   salesOrderLineId?: string
@@ -449,6 +511,8 @@ export interface ProductionOrder {
   status: ProductionStatus
   stockDeducted?: boolean
   confirmedAt?: number
+  /** Ngày sản xuất */
+  producedAt?: number
   note: string
   createdAt: number
   updatedAt: number

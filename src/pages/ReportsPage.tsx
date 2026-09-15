@@ -94,7 +94,7 @@ export function ReportsPage() {
           supplierId: o.supplierId,
           status: o.status,
           orderAt: o.orderAt,
-          lineTotal: o.lineTotal,
+          lineTotal: o.orderAmount ?? o.lineTotal,
           payments: (o.payments || []).map((p) => ({ amount: p.amount, paidAt: p.paidAt })),
         })),
       }),
@@ -429,12 +429,20 @@ export function ReportsPage() {
           {nccRows.length === 0 && <Empty text="Chưa có nhà cung cấp." />}
           {sup && (
             <Bento title={sup.name} subtitle={`Nợ hiện tại ${formatMoney(sup.totalDebt || 0)}`}>
-              {supPurchases.map((o) => (
-                <div key={o.id} className="flex justify-between text-sm">
-                  <span>{o.code} · {o.materialName}</span>
-                  <span className="num">{formatMoney(o.lineTotal)}</span>
-                </div>
-              ))}
+              {supPurchases.map((o) => {
+                const amt = o.orderAmount ?? o.lineTotal
+                const weight = o.plannedWeight ?? o.quantity
+                const received = (o.receipts || []).reduce((s, r) => s + (r.quantity || 0), 0)
+                return (
+                  <div key={o.id} className="flex justify-between gap-2 text-sm">
+                    <span>
+                      {o.code} · {o.materialName}
+                      <span className="text-muted"> · KL {formatNumber(received)}/{formatNumber(weight)}</span>
+                    </span>
+                    <span className="num">{formatMoney(amt)}</span>
+                  </div>
+                )
+              })}
               {supPurchases.length === 0 && <Empty text="Chưa có đơn chốt." />}
             </Bento>
           )}

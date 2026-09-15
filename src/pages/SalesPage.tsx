@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import {
   createAuditLog,
+  createCustomer,
   createOrder,
   deductStock,
   generateOrderCode,
@@ -30,6 +31,7 @@ import {
   watchFormulas,
   watchMaterials,
   watchOrders,
+  watchSalesDeliveries,
   watchUsers,
 } from '@/lib/store'
 import type {
@@ -46,6 +48,7 @@ import type {
   OrderPayment,
   OrderStatusCore,
   ProductRecipe,
+  SalesDelivery,
 } from '@/types'
 import {
   ORDER_STATUS_COLORS,
@@ -67,9 +70,10 @@ import {
   resolveOrderStatus,
   statusFromPayment,
 } from '@/types'
-import { cn, formatDateTime, formatMoney, formatNumber, uid } from '@/lib/utils'
+import { cn, formatDateTime, formatMoney, formatNumber, fromDateInputValue, toDateInputValue, uid } from '@/lib/utils'
+import { OrderFulfillmentHint, SalesDeliveryPanel } from '@/pages/SalesDeliveryPanel'
 
-type SalesTab = 'tao-don' | 'don'
+type SalesTab = 'tao-don' | 'don' | 'xuat-ban'
 
 function emptyLine(f?: Formula, recipe?: ProductRecipe): OrderLine {
   const items = recipe
@@ -290,6 +294,9 @@ export function SalesPage() {
 
   const [lines, setLines] = useState<OrderLine[]>([emptyLine()])
   const [customerId, setCustomerId] = useState('')
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [orderAtDate, setOrderAtDate] = useState(() => toDateInputValue(Date.now()))
+  const [deliveries, setDeliveries] = useState<SalesDelivery[]>([])
   const [payments, setPayments] = useState<OrderPayment[]>([])
   const [payAmount, setPayAmount] = useState(0)
   const [payNote, setPayNote] = useState('')
@@ -327,7 +334,8 @@ export function SalesPage() {
     const u4 = watchMaterials(setMaterials)
     const u5 = watchUsers(setUsers)
     const u6 = watchConversions(setConversions)
-    return () => { u1(); u2(); u3(); u4(); u5(); u6() }
+    const u7 = watchSalesDeliveries(setDeliveries)
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7() }
   }, [])
 
   useEffect(() => {
@@ -589,6 +597,8 @@ export function SalesPage() {
     setContractAmount(0)
     setNote('')
     setCustomerId('')
+    setNewCustomerName('')
+    setOrderAtDate(toDateInputValue(Date.now()))
     setOrderStatusOverride(null)
     setAssignedTo(profile?.id || '')
     setEditingOrder(null)
@@ -609,6 +619,8 @@ export function SalesPage() {
       })),
     )
     setCustomerId(order.customerId || '')
+    setNewCustomerName('')
+    setOrderAtDate(toDateInputValue(order.orderAt || Date.now()))
     setPayments(orderPaymentsList(order).map((p) => ({ ...p })))
     setContractAmount(order.contractAmount || order.totalAmount || 0)
     setNote(order.note || '')
@@ -640,9 +652,42 @@ export function SalesPage() {
     setBusy(true)
     setMessage('')
     try {
-      const cust = customers.find((c) => c.id === customerId)
+      let cust = customers.find((c) => c.id === customerId)
+      if (!cust && newCustomerName.trim()) {
+        const now = Date.now()
+        const name = newCustomerName.trim()
+        const id = await createCustomer({
+          name,
+          taxCode: '',
+          address: '',
+          representative: '',
+          phone: '',
+          email: '',
+          note: '',
+          totalDebt: 0,
+          totalPurchased: 0,
+          createdAt: now,
+          updatedAt: now,
+        })
+        cust = {
+          id,
+          name,
+          taxCode: '',
+          address: '',
+          representative: '',
+          phone: '',
+          email: '',
+          note: '',
+          totalDebt: 0,
+          totalPurchased: 0,
+          createdAt: now,
+          updatedAt: now,
+        }
+        setCustomerId(id)
+        setNewCustomerName('')
+      }
       if (!cust) {
-        setMessage('Chọn khách hàng trước khi tạo đơn.')
+        setMessage('Chọn hoặc tạo khách hàng trước khi tạo đơn.')
         setBusy(false)
         return
       }
@@ -693,7 +738,7 @@ export function SalesPage() {
         locked: editingOrder?.locked || false,
         contractExported: editingOrder?.contractExported || false,
         note,
-        orderAt: editingOrder?.orderAt || Date.now(),
+        orderAt: editingOrder?.orderAt || fromDateInputValue(orderAtDate),
         createdAt: editingOrder?.createdAt || Date.now(),
         updatedAt: Date.now(),
         createdBy: editingOrder?.createdBy || profile.id,
@@ -929,10 +974,12 @@ export function SalesPage() {
   return (
     <div>
       <PageHeader title="Bán hàng" />
+      {message && <p className="mb-3 text-sm font-medium text-info">{message}</p>}
       <Tabs
         tabs={[
           { id: 'tao-don', label: editingOrder ? `Sửa ${editingOrder.code}` : 'Tạo đơn hàng' },
           { id: 'don', label: 'Đơn hàng' },
+          { id: 'xuat-ban', label: 'Xuất bán thực tế' },
         ]}
         value={tab}
         onChange={(id) => setTab(id as SalesTab)}
@@ -952,12 +999,27 @@ export function SalesPage() {
               <SearchableSelect
                 label="Chọn khách hàng"
                 value={customerId}
-                onChange={setCustomerId}
+                onChange={(v) => { setCustomerId(v); if (v) setNewCustomerName('') }}
                 options={customerOptions}
                 placeholder="— Chọn khách hàng —"
                 searchPlaceholder="Gõ tên, MST, SĐT…"
                 disabled={!writable}
-                required
+              />
+              <Input
+                className="mt-2"
+                label="Hoặc tạo khách mới (chỉ cần tên)"
+                value={newCustomerName}
+                onChange={(e) => { setNewCustomerName(e.target.value); if (e.target.value) setCustomerId('') }}
+                disabled={!writable}
+                placeholder="Tên khách hàng"
+              />
+              <Input
+                className="mt-2"
+                label="Ngày đơn"
+                type="date"
+                value={orderAtDate}
+                onChange={(e) => setOrderAtDate(e.target.value)}
+                disabled={!writable || !!editingOrder}
               />
             </Bento>
 
@@ -1323,6 +1385,7 @@ export function SalesPage() {
                         {o.customerName} · {formatDateTime(o.orderAt)}
                         {o.assignedToName && ` · PT: ${o.assignedToName}`}
                       </p>
+                      <OrderFulfillmentHint order={o} deliveries={deliveries} />
                     </div>
                     <p className="num text-lg font-extrabold sm:shrink-0">{formatMoney(o.totalAmount)}</p>
                   </button>
@@ -1331,6 +1394,18 @@ export function SalesPage() {
             )}
           </Bento>
         </div>
+      )}
+
+      {tab === 'xuat-ban' && (
+        <SalesDeliveryPanel
+          writable={writable}
+          profile={profile ? { id: profile.id, displayName: profile.displayName } : null}
+          customers={customers}
+          formulas={formulas}
+          orders={orders}
+          deliveries={deliveries}
+          onMsg={setMessage}
+        />
       )}
 
       <Modal open={!!recipePick} onClose={() => setRecipePick(null)} title="Chọn công thức">

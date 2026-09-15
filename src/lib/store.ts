@@ -17,7 +17,7 @@ import {
   type Transaction,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import { applyCarryOnClose, canReceiveQty, purchaseLineTotal } from './purchase'
+import { applyCarryOnClose, canReceiveQty, plannedQtyFromAmount, purchaseLineTotal, resolveOrderAmount, resolvePlannedWeight } from './purchase'
 import { allocateDeductedQty, mergeDeductItems } from './production'
 import type {
   AppUser,
@@ -35,7 +35,9 @@ import type {
   PurchaseOrder,
   PurchasePayment,
   PurchaseReceipt,
+  PurchaseReceiptDoc,
   ProductionOrder,
+  SalesDelivery,
 } from '@/types'
 
 const COL = {
@@ -51,7 +53,9 @@ const COL = {
   auditLogs: 'auditLogs',
   suppliers: 'suppliers',
   purchaseOrders: 'purchaseOrders',
+  purchaseReceipts: 'purchaseReceipts',
   productionOrders: 'productionOrders',
+  salesDeliveries: 'salesDeliveries',
 } as const
 
 export const DEFAULT_SETTINGS: CompanySettings = {
@@ -372,6 +376,14 @@ export function generatePurchaseCode(date = new Date()): string {
   return generateCode('MH', date)
 }
 
+export function generatePurchaseReceiptCode(date = new Date()): string {
+  return generateCode('NM', date)
+}
+
+export function generateSalesDeliveryCode(date = new Date()): string {
+  return generateCode('XB', date)
+}
+
 export function generateProductionCode(date = new Date()): string {
   return generateCode('SX', date)
 }
@@ -683,13 +695,19 @@ export async function createOpenPurchaseOrder(data: Omit<PurchaseOrder, 'id'>): 
     const sup = { id: supSnap.id, ...supSnap.data() } as Supplier
     const carriedIn = Number(sup.pendingCarry) || 0
     const paid = (data.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0)
-    const lineTotal = purchaseLineTotal(data.quantity, data.unitPrice)
+    const orderAmount = resolveOrderAmount(data)
+    const plannedWeight = resolvePlannedWeight(data)
+    const plannedQty = plannedQtyFromAmount(orderAmount, data.unitPrice)
     const now = Date.now()
     tx.set(
       poRef,
       stripUndefined({
         ...data,
-        lineTotal,
+        orderAmount,
+        plannedWeight,
+        plannedQty,
+        quantity: plannedWeight,
+        lineTotal: orderAmount,
         carriedIn,
         carriedFromOrderId: carriedIn ? (sup.pendingCarryFromOrderId || '') : '',
         carriedOut: 0,
@@ -700,8 +718,8 @@ export async function createOpenPurchaseOrder(data: Omit<PurchaseOrder, 'id'>): 
     tx.update(supRef, {
       pendingCarry: 0,
       pendingCarryFromOrderId: '',
-      totalDebt: (Number(sup.totalDebt) || 0) + lineTotal - paid,
-      totalPurchased: (Number(sup.totalPurchased) || 0) + lineTotal,
+      totalDebt: (Number(sup.totalDebt) || 0) + orderAmount - paid,
+      totalPurchased: (Number(sup.totalPurchased) || 0) + orderAmount,
       updatedAt: now,
     })
   })
@@ -722,21 +740,27 @@ export async function confirmDraftPurchaseOrder(poId: string): Promise<void> {
     const sup = { id: supSnap.id, ...supSnap.data() } as Supplier
     const carriedIn = Number(sup.pendingCarry) || 0
     const paid = (po.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0)
-    const lineTotal = purchaseLineTotal(po.quantity, po.unitPrice)
+    const orderAmount = resolveOrderAmount(po)
+    const plannedWeight = resolvePlannedWeight(po)
+    const plannedQty = plannedQtyFromAmount(orderAmount, po.unitPrice)
     const now = Date.now()
     tx.update(poRef, {
       status: 'open',
       carriedIn,
       carriedFromOrderId: carriedIn ? (sup.pendingCarryFromOrderId || '') : '',
-      lineTotal,
-      orderAt: now,
+      orderAmount,
+      plannedWeight,
+      plannedQty,
+      quantity: plannedWeight,
+      lineTotal: orderAmount,
+      orderAt: po.orderAt || now,
       updatedAt: now,
     })
     tx.update(supRef, {
       pendingCarry: 0,
       pendingCarryFromOrderId: '',
-      totalDebt: (Number(sup.totalDebt) || 0) + lineTotal - paid,
-      totalPurchased: (Number(sup.totalPurchased) || 0) + lineTotal,
+      totalDebt: (Number(sup.totalDebt) || 0) + orderAmount - paid,
+      totalPurchased: (Number(sup.totalPurchased) || 0) + orderAmount,
       updatedAt: now,
     })
   })
@@ -756,15 +780,15 @@ export async function receivePurchaseOrder(
     const po = { id: poSnap.id, ...poSnap.data() } as PurchaseOrder
     if (po.status !== 'open') throw new Error('Chỉ nhận hàng khi đơn đang mở')
     const rec = po.receipts || []
-    const received = rec.reduce((s, r) => s + (Number(r.quantity) || 0), 0)
-    if (!canReceiveQty(po.quantity, received, qty)) {
-      throw new Error('Số nhận không hợp lệ (phải > 0 và không vượt sl đặt).')
+    if (!canReceiveQty(resolvePlannedWeight(po), 0, qty)) {
+      throw new Error('Số nhận phải > 0.')
     }
     const matRef = doc(db, COL.materials, po.materialId)
     const matSnap = await tx.get(matRef)
     if (!matSnap.exists()) throw new Error('Không tìm thấy vật liệu')
     const mat = matSnap.data() as Material
-    const cost = qty * (Number(po.unitPrice) || 0)
+    const unitPrice = Number(receipt.unitPrice ?? po.unitPrice) || 0
+    const cost = receipt.lineTotal != null ? Number(receipt.lineTotal) : qty * unitPrice
     const current = Number(mat.stock) || 0
     const newStock = current + qty
     const totalValue = (Number(mat.avgCost) || 0) * current + cost
@@ -773,10 +797,185 @@ export async function receivePurchaseOrder(
     tx.set(entryRef, { type: 'import', ...entry, cost, quantity: qty, materialId: po.materialId })
     tx.update(matRef, { stock: newStock, avgCost, updatedAt: now })
     tx.update(poRef, {
-      receipts: [...rec, { ...receipt, stockEntryId: entryRef.id }],
+      receipts: [
+        ...rec,
+        {
+          ...receipt,
+          unitPrice,
+          lineTotal: cost,
+          receiptAt: receipt.receiptAt || now,
+          stockEntryId: entryRef.id,
+        },
+      ],
       updatedAt: now,
     })
   })
+}
+
+/**
+ * Nhập mua thực tế: cộng kho; optional gắn đơn (trừ lũy kế);
+ * không gắn đơn → ghi nợ NCC theo thành tiền (mua lẻ).
+ */
+export async function createPurchaseReceipt(
+  data: Omit<PurchaseReceiptDoc, 'id' | 'stockEntryId'>,
+): Promise<string> {
+  const receiptRef = doc(collection(db, COL.purchaseReceipts))
+  const entryRef = doc(collection(db, COL.stockEntries))
+  await runTransaction(db, async (tx) => {
+    const qty = Number(data.quantity) || 0
+    if (!(qty > 0)) throw new Error('Số lượng phải > 0')
+    const unitPrice = Number(data.unitPrice) || 0
+    const lineTotal = data.lineTotal != null ? roundMoneySafe(data.lineTotal) : purchaseLineTotal(qty, unitPrice)
+
+    let po: PurchaseOrder | null = null
+    let poRef: ReturnType<typeof doc> | null = null
+    if (data.purchaseOrderId) {
+      poRef = doc(db, COL.purchaseOrders, data.purchaseOrderId)
+      const poSnap = await tx.get(poRef)
+      if (!poSnap.exists()) throw new Error('Không tìm thấy đơn mua')
+      po = { id: poSnap.id, ...poSnap.data() } as PurchaseOrder
+      if (po.status !== 'open') throw new Error('Chỉ nhập theo đơn đang mở')
+    }
+
+    const matRef = doc(db, COL.materials, data.materialId)
+    const matSnap = await tx.get(matRef)
+    if (!matSnap.exists()) throw new Error('Không tìm thấy vật liệu')
+    const mat = matSnap.data() as Material
+
+    const supRef = doc(db, COL.suppliers, data.supplierId)
+    const supSnap = await tx.get(supRef)
+    if (!supSnap.exists()) throw new Error('Không tìm thấy NCC')
+    const sup = { id: supSnap.id, ...supSnap.data() } as Supplier
+
+    const current = Number(mat.stock) || 0
+    const newStock = current + qty
+    const totalValue = (Number(mat.avgCost) || 0) * current + lineTotal
+    const avgCost = newStock > 0 ? totalValue / newStock : 0
+    const now = Date.now()
+
+    tx.set(entryRef, {
+      type: 'import',
+      materialId: data.materialId,
+      materialName: data.materialName,
+      quantity: qty,
+      unit: data.unit,
+      cost: lineTotal,
+      contractor: data.supplierName,
+      note: data.note || (po ? `Nhập thực tế ${data.code} · đơn ${po.code}` : `Nhập mua lẻ ${data.code}`),
+      createdAt: data.receiptAt || now,
+      createdBy: data.createdBy,
+      createdByName: data.createdByName || '',
+      purchaseOrderId: data.purchaseOrderId || '',
+      orderCode: data.purchaseOrderCode || po?.code || '',
+      supplierId: data.supplierId,
+    })
+    tx.update(matRef, { stock: newStock, avgCost, updatedAt: now })
+
+    if (po && poRef) {
+      const embedded: PurchaseReceipt = {
+        id: data.code,
+        quantity: qty,
+        unitPrice,
+        lineTotal,
+        receiptAt: data.receiptAt || now,
+        createdAt: now,
+        createdBy: data.createdBy,
+        createdByName: data.createdByName,
+        stockEntryId: entryRef.id,
+      }
+      tx.update(poRef, {
+        receipts: [...(po.receipts || []), embedded],
+        updatedAt: now,
+      })
+    } else {
+      // Mua lẻ: ghi nợ + doanh số NCC
+      tx.update(supRef, {
+        totalDebt: (Number(sup.totalDebt) || 0) + lineTotal,
+        totalPurchased: (Number(sup.totalPurchased) || 0) + lineTotal,
+        updatedAt: now,
+      })
+    }
+
+    tx.set(
+      receiptRef,
+      stripUndefined({
+        ...data,
+        lineTotal,
+        stockEntryId: entryRef.id,
+        updatedAt: now,
+      } as Record<string, unknown>),
+    )
+  })
+  return receiptRef.id
+}
+
+function roundMoneySafe(n: number): number {
+  return Math.round(Number(n) || 0)
+}
+
+export function watchPurchaseReceipts(cb: (items: PurchaseReceiptDoc[]) => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL.purchaseReceipts), orderBy('receiptAt', 'desc')),
+    (snap) => {
+      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PurchaseReceiptDoc))
+    },
+  )
+}
+
+export function watchSalesDeliveries(cb: (items: SalesDelivery[]) => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL.salesDeliveries), orderBy('soldAt', 'desc')),
+    (snap) => {
+      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SalesDelivery))
+    },
+  )
+}
+
+/**
+ * Xuất bán thực tế: optional gắn đơn (chỉ trừ lũy kế); không gắn → tăng công nợ khách.
+ */
+export async function createSalesDelivery(data: Omit<SalesDelivery, 'id'>): Promise<string> {
+  const ref = doc(collection(db, COL.salesDeliveries))
+  await runTransaction(db, async (tx) => {
+    const qty = Number(data.quantity) || 0
+    if (!(qty > 0)) throw new Error('Số lượng phải > 0')
+    const lineTotal =
+      data.lineTotal != null ? roundMoneySafe(data.lineTotal) : purchaseLineTotal(qty, data.unitPrice)
+
+    if (data.orderId) {
+      const orderRef = doc(db, COL.orders, data.orderId)
+      const orderSnap = await tx.get(orderRef)
+      if (!orderSnap.exists()) throw new Error('Không tìm thấy đơn bán')
+      const order = { id: orderSnap.id, ...orderSnap.data() } as Order
+      if (data.orderLineId && !(order.lines || []).some((l) => l.id === data.orderLineId)) {
+        throw new Error('Không tìm thấy dòng đơn bán')
+      }
+      // Lũy kế theo phiếu; không sửa totalAmount đơn (cam kết giữ nguyên)
+      void order
+    } else {
+      const custRef = doc(db, COL.customers, data.customerId)
+      const custSnap = await tx.get(custRef)
+      if (!custSnap.exists()) throw new Error('Không tìm thấy khách hàng')
+      const cust = custSnap.data() as Customer
+      const now = Date.now()
+      tx.update(custRef, {
+        totalDebt: (Number(cust.totalDebt) || 0) + lineTotal,
+        totalPurchased: (Number(cust.totalPurchased) || 0) + lineTotal,
+        updatedAt: now,
+      })
+    }
+
+    const now = Date.now()
+    tx.set(
+      ref,
+      stripUndefined({
+        ...data,
+        lineTotal,
+        updatedAt: now,
+      } as Record<string, unknown>),
+    )
+  })
+  return ref.id
 }
 
 export async function addPurchasePayment(poId: string, payment: PurchasePayment): Promise<void> {
@@ -813,6 +1012,8 @@ export async function closePurchaseOrder(poId: string, carry: boolean): Promise<
     if (carry) {
       if (!supSnap?.exists()) throw new Error('Không tìm thấy NCC')
       carriedOut = applyCarryOnClose({
+        orderAmount: resolveOrderAmount(po),
+        plannedWeight: resolvePlannedWeight(po),
         quantity: po.quantity,
         unitPrice: po.unitPrice,
         carriedIn: po.carriedIn || 0,
@@ -847,11 +1048,11 @@ export async function cancelPurchaseOrder(poId: string): Promise<void> {
     const now = Date.now()
     if (po.status === 'open' && supRef && supSnap?.exists()) {
       const paid = (po.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0)
-      const lineTotal = purchaseLineTotal(po.quantity, po.unitPrice)
+      const orderAmount = resolveOrderAmount(po)
       const sup = { id: supSnap.id, ...supSnap.data() } as Supplier
       tx.update(supRef, {
-        totalDebt: (Number(sup.totalDebt) || 0) - lineTotal + paid,
-        totalPurchased: Math.max(0, (Number(sup.totalPurchased) || 0) - lineTotal),
+        totalDebt: (Number(sup.totalDebt) || 0) - orderAmount + paid,
+        totalPurchased: Math.max(0, (Number(sup.totalPurchased) || 0) - orderAmount),
         pendingCarry: (Number(sup.pendingCarry) || 0) + (Number(po.carriedIn) || 0),
         pendingCarryFromOrderId: po.carriedFromOrderId || sup.pendingCarryFromOrderId || '',
         updatedAt: now,
