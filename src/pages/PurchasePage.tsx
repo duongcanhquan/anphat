@@ -74,6 +74,9 @@ export function PurchasePage() {
   const [supplierId, setSupplierId] = useState('')
   const [newSupplierName, setNewSupplierName] = useState('')
   const [materialId, setMaterialId] = useState('')
+  /** qty = nhập số lượng × ĐG → tiền; money = nhập tiền ÷ ĐG → số lượng */
+  const [createMode, setCreateMode] = useState<'qty' | 'money'>('money')
+  const [qtyInput, setQtyInput] = useState('')
   const [orderAmount, setOrderAmount] = useState(0)
   const [plannedWeight, setPlannedWeight] = useState('')
   const [unitPrice, setUnitPrice] = useState(0)
@@ -123,12 +126,15 @@ export function PurchasePage() {
   const openOrders = orders.filter((o) => o.status === 'open')
 
   const calcPlannedQty = plannedQtyFromAmount(orderAmount, unitPrice)
+  const calcAmountFromQty = purchaseLineTotal(Number(qtyInput) || 0, unitPrice)
   const previewReceiptTotal = purchaseLineTotal(Number(rQty) || 0, rUnitPrice)
 
   const resetForm = () => {
     setSupplierId('')
     setNewSupplierName('')
     setMaterialId('')
+    setCreateMode('money')
+    setQtyInput('')
     setOrderAmount(0)
     setPlannedWeight('')
     setUnitPrice(0)
@@ -205,15 +211,42 @@ export function PurchasePage() {
   const save = async (asDraft: boolean) => {
     if (!writable || !profile || inflight.current) return
     const mat = activeMats.find((m) => m.id === materialId)
-    const weight = Number(plannedWeight)
     if (!supplierId && !newSupplierName.trim()) {
       setMsg('Chọn hoặc nhập tên nhà cung cấp.')
       return
     }
-    if (!mat || !(orderAmount > 0) || !(unitPrice > 0) || !(weight > 0)) {
-      setMsg('Chọn vật liệu, số tiền đặt, đơn giá và khối lượng kế hoạch > 0.')
+    if (!mat || !(unitPrice > 0)) {
+      setMsg('Chọn vật liệu và đơn giá > 0.')
       return
     }
+
+    let finalAmount = 0
+    let finalWeight = 0
+    let finalPlannedQty = 0
+
+    if (createMode === 'qty') {
+      const qty = Number(qtyInput)
+      if (!(qty > 0)) {
+        setMsg('Nhập số lượng đặt > 0.')
+        return
+      }
+      finalAmount = purchaseLineTotal(qty, unitPrice)
+      finalPlannedQty = qty
+      finalWeight = Number(plannedWeight) > 0 ? Number(plannedWeight) : qty
+    } else {
+      if (!(orderAmount > 0)) {
+        setMsg('Nhập số tiền đặt hàng > 0.')
+        return
+      }
+      finalAmount = orderAmount
+      finalPlannedQty = plannedQtyFromAmount(orderAmount, unitPrice)
+      finalWeight = Number(plannedWeight)
+      if (!(finalWeight > 0)) {
+        setMsg('Nhập khối lượng kế hoạch > 0.')
+        return
+      }
+    }
+
     inflight.current = true
     setBusy(true)
     setMsg('')
@@ -234,7 +267,6 @@ export function PurchasePage() {
               createdByName: profile.displayName,
             }]
           : []
-      const plannedQty = plannedQtyFromAmount(orderAmount, unitPrice)
       const now = Date.now()
       const at = fromDateInputValue(orderAt)
       const payload = {
@@ -244,12 +276,12 @@ export function PurchasePage() {
         materialId: mat.id,
         materialName: mat.name,
         unit: mat.unit,
-        quantity: weight,
-        orderAmount,
-        plannedWeight: weight,
-        plannedQty,
+        quantity: finalWeight,
+        orderAmount: finalAmount,
+        plannedWeight: finalWeight,
+        plannedQty: finalPlannedQty,
         unitPrice,
-        lineTotal: orderAmount,
+        lineTotal: finalAmount,
         carriedIn: 0,
         carriedFromOrderId: '',
         carriedOut: 0,
@@ -582,19 +614,86 @@ export function PurchasePage() {
             required
           />
           <Input label="Ngày đơn" type="date" value={orderAt} onChange={(e) => setOrderAt(e.target.value)} required />
-          <MoneyInput label="Số tiền đặt hàng" value={orderAmount} onChange={setOrderAmount} />
-          <MoneyInput label="Đơn giá" value={unitPrice} onChange={setUnitPrice} />
-          <p className="text-sm text-muted">
-            Số lượng tính (tiền ÷ ĐG): <strong className="num text-ink">{formatNumber(calcPlannedQty)}</strong>
-          </p>
-          <Input
-            label="Khối lượng kế hoạch"
-            type="number"
-            step="any"
-            value={plannedWeight}
-            onChange={(e) => setPlannedWeight(e.target.value)}
-            required
-          />
+
+          <div>
+            <p className="mb-1.5 text-sm font-medium text-ink-soft">Cách tính đơn mua</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className={
+                  createMode === 'money'
+                    ? 'rounded-xl bg-accent px-3 py-2.5 text-sm font-semibold text-white'
+                    : 'rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm font-semibold text-muted'
+                }
+                onClick={() => setCreateMode('money')}
+              >
+                1. Theo số tiền
+              </button>
+              <button
+                type="button"
+                className={
+                  createMode === 'qty'
+                    ? 'rounded-xl bg-accent px-3 py-2.5 text-sm font-semibold text-white'
+                    : 'rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm font-semibold text-muted'
+                }
+                onClick={() => setCreateMode('qty')}
+              >
+                2. Theo số lượng
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-muted">
+              {createMode === 'money'
+                ? 'Ưu tiên: nhập số tiền chuyển/đặt + đơn giá → app ra số lượng ngay.'
+                : 'Nhập số lượng đặt + đơn giá → app ra thành tiền.'}
+            </p>
+          </div>
+
+          {createMode === 'money' ? (
+            <>
+              <MoneyInput label="Số tiền đặt hàng" value={orderAmount} onChange={setOrderAmount} />
+              <MoneyInput label="Đơn giá" value={unitPrice} onChange={setUnitPrice} />
+              <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                Số lượng tính (tiền ÷ ĐG):{' '}
+                <strong className="num text-lg text-ink">{formatNumber(calcPlannedQty)}</strong>
+              </p>
+              <Input
+                label="Khối lượng kế hoạch"
+                type="number"
+                step="any"
+                value={plannedWeight}
+                onChange={(e) => setPlannedWeight(e.target.value)}
+                required
+              />
+            </>
+          ) : (
+            <>
+              <Input
+                label="Số lượng đặt"
+                type="number"
+                step="any"
+                value={qtyInput}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setQtyInput(v)
+                  setPlannedWeight((prev) => (!prev || prev === qtyInput ? v : prev))
+                }}
+                required
+              />
+              <MoneyInput label="Đơn giá" value={unitPrice} onChange={setUnitPrice} />
+              <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                Thành tiền (sl × ĐG):{' '}
+                <strong className="num text-lg text-ink">{formatMoney(calcAmountFromQty)}</strong>
+              </p>
+              <Input
+                label="Khối lượng kế hoạch (mặc định = số lượng đặt)"
+                type="number"
+                step="any"
+                value={plannedWeight}
+                onChange={(e) => setPlannedWeight(e.target.value)}
+              />
+            </>
+          )}
+
           <MoneyInput label="Chuyển tiền ngay — thường chuyển chẵn (không bắt buộc)" value={payNow} onChange={setPayNow} />
           <Textarea label="Ghi chú" value={note} onChange={(e) => setNote(e.target.value)} />
           <div className="flex gap-2">
