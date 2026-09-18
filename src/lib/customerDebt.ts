@@ -2,6 +2,28 @@ export function isPostedSalesStatus(status: string): boolean {
   return status !== 'draft' && status !== 'huy'
 }
 
+/** Công nợ đơn = KL thực giao × ĐG gốc − tiền ứng. Được âm (đã ứng vượt giao). */
+export function orderCustomerDebt(input: { deliveredAmount: number; paidAmount: number }): number {
+  return Math.round((Number(input.deliveredAmount) || 0) - (Number(input.paidAmount) || 0))
+}
+
+/** Giá trị giao theo đơn giá dòng đơn gốc. */
+export function orderDeliveredValue(
+  lines: { id: string; unitPrice: number }[],
+  deliveries: { orderLineId?: string; quantity: number; unitPrice?: number; lineTotal?: number }[],
+): number {
+  return Math.round(
+    (deliveries || []).reduce((sum, d) => {
+      const line = (lines || []).find((l) => l.id === d.orderLineId)
+      const price = Number(line?.unitPrice) || Number(d.unitPrice) || 0
+      const qty = Number(d.quantity) || 0
+      if (line) return sum + qty * price
+      if (d.lineTotal != null && Number.isFinite(Number(d.lineTotal))) return sum + (Number(d.lineTotal) || 0)
+      return sum + qty * price
+    }, 0),
+  )
+}
+
 /** null = không đụng thẻ nợ khách (nháp / huỷ giữ nguyên). */
 export function customerDebtDelta(input: {
   wasPosted: boolean
@@ -42,9 +64,4 @@ export function reconcileCustomerMoney(input: {
     (input.offOrderPayments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0),
   )
   return { onOrderPaid, offOrderPaid, combinedPaid: onOrderPaid + offOrderPaid }
-}
-
-/** Dư giao (cam kết − đã giao) trừ thẳng công nợ. Dương = giao thiếu → giảm nợ. */
-export function deliveryVarianceDebtDelta(remainingAmount: number): number {
-  return -Math.round(Number(remainingAmount) || 0)
 }

@@ -266,6 +266,9 @@ export function SalesDeliveryPanel({
             <Input label="Số lượng" type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required />
             <MoneyInput label="Đơn giá" value={unitPrice} onChange={setUnitPrice} />
           </div>
+          {linkOrder && (
+            <p className="text-xs text-muted">Công nợ lấy khối lượng × đơn giá trên đơn gốc (không lấy ĐG sửa trên phiếu).</p>
+          )}
           <p className="text-sm">Thành tiền: <strong className="num">{formatMoney(lineTotal)}</strong></p>
           <Textarea label="Ghi chú" value={note} onChange={(e) => setNote(e.target.value)} />
           <Button type="submit" disabled={busy} className="w-full">Lưu xuất bán</Button>
@@ -306,7 +309,7 @@ export function OrderFulfillmentHint({ order, deliveries }: { order: Order; deli
     <p className="text-xs text-muted">
       Đã giao {formatNumber(f.deliveredQty)} ({formatMoney(f.deliveredAmount)})
       · Còn giao {formatNumber(f.remainingQty)} / {formatMoney(f.remainingAmount)}
-      {order.deliveryVarianceApplied != null ? ' · đã trừ dư vào công nợ' : ''}
+      · Nợ đơn {formatMoney(order.debt)}
     </p>
   )
 }

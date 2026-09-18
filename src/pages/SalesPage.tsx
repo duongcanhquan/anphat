@@ -17,7 +17,6 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  applyDeliveryVariance,
   createAuditLog,
   createCustomer,
   createOrder,
@@ -71,7 +70,7 @@ import {
   resolveOrderStatus,
   statusFromPayment,
 } from '@/types'
-import { customerDebtDelta, customerPurchasedDelta, isPostedSalesStatus } from '@/lib/customerDebt'
+import { customerDebtDelta, isPostedSalesStatus, orderCustomerDebt, orderDeliveredValue } from '@/lib/customerDebt'
 import { orderFulfillment } from '@/lib/salesDelivery'
 import { cn, formatDateTime, formatMoney, formatNumber, fromDateInputValue, toDateInputValue, uid } from '@/lib/utils'
 import { OrderFulfillmentHint, SalesDeliveryPanel } from '@/pages/SalesDeliveryPanel'
@@ -728,7 +727,13 @@ export function SalesPage() {
       const orderCode = editingOrder?.code || generateOrderCode()
       const finalPayments = buildPaymentsForSave()
       const finalPaid = finalPayments.reduce((s, p) => s + (p.amount || 0), 0)
-      const finalDebt = Math.max(0, totalAmount - finalPaid)
+      const deliveredAmount = editingOrder
+        ? orderDeliveredValue(
+            lines,
+            deliveries.filter((d) => d.orderId === editingOrder.id),
+          )
+        : 0
+      const finalDebt = orderCustomerDebt({ deliveredAmount, paidAmount: finalPaid })
 
       // Chỉ Draft khi chưa có tiền. Có cọc → Đang thực hiện. Đủ tiền → Hoàn thiện.
       // Nút "Lưu Draft" chỉ hợp lệ khi chưa thanh toán.
@@ -794,16 +799,9 @@ export function SalesPage() {
         {
           const wasPosted = isPostedSalesStatus(normalizeOrderStatus(editingOrder.status))
           const dDebt = customerDebtDelta({ wasPosted, nextStatus: status, oldDebt, nextDebt: finalDebt })
-          const dBuy = customerPurchasedDelta({
-            wasPosted,
-            nextStatus: status,
-            oldTotal: editingOrder.totalAmount,
-            nextTotal: totalAmount,
-          })
-          if (dDebt != null || dBuy != null) {
+          if (dDebt != null) {
             await updateCustomer(cust.id, {
-              ...(dBuy != null ? { totalPurchased: Math.max(0, (cust.totalPurchased || 0) + dBuy) } : {}),
-              ...(dDebt != null ? { totalDebt: (cust.totalDebt || 0) + dDebt } : {}),
+              totalDebt: (cust.totalDebt || 0) + dDebt,
             })
           }
         }
@@ -842,16 +840,9 @@ export function SalesPage() {
             oldDebt: 0,
             nextDebt: finalDebt,
           })
-          const dBuy = customerPurchasedDelta({
-            wasPosted: false,
-            nextStatus: status,
-            oldTotal: 0,
-            nextTotal: totalAmount,
-          })
-          if (dDebt != null || dBuy != null) {
+          if (dDebt != null) {
             await updateCustomer(cust.id, {
-              ...(dBuy != null ? { totalPurchased: (cust.totalPurchased || 0) + dBuy } : {}),
-              ...(dDebt != null ? { totalDebt: (cust.totalDebt || 0) + dDebt } : {}),
+              totalDebt: (cust.totalDebt || 0) + dDebt,
             })
           }
         }
@@ -959,7 +950,11 @@ export function SalesPage() {
         ...orderPaymentsList(detailOrder),
       ]
       const paid = nextPayments.reduce((s, p) => s + p.amount, 0)
-      const nextDebt = Math.max(0, detailOrder.totalAmount - paid)
+      const deliveredAmount = orderDeliveredValue(
+        detailOrder.lines || [],
+        deliveries.filter((d) => d.orderId === detailOrder.id),
+      )
+      const nextDebt = orderCustomerDebt({ deliveredAmount, paidAmount: paid })
       const nextStatus =
         normalizeOrderStatus(detailOrder.status) === 'huy'
           ? ('huy' as OrderStatusCore)
@@ -981,16 +976,9 @@ export function SalesPage() {
           oldDebt: detailOrder.debt || 0,
           nextDebt,
         })
-        const dBuy = customerPurchasedDelta({
-          wasPosted,
-          nextStatus: nextStatus,
-          oldTotal: detailOrder.totalAmount,
-          nextTotal: detailOrder.totalAmount,
-        })
-        if (dDebt != null || dBuy != null) {
+        if (dDebt != null) {
           await updateCustomer(cust.id, {
-            ...(dBuy != null ? { totalPurchased: Math.max(0, (cust.totalPurchased || 0) + dBuy) } : {}),
-            ...(dDebt != null ? { totalDebt: (cust.totalDebt || 0) + dDebt } : {}),
+            totalDebt: (cust.totalDebt || 0) + dDebt,
           })
         }
       }
@@ -1646,32 +1634,16 @@ export function SalesPage() {
                 detailOrder.lines || [],
                 deliveries.filter((d) => d.orderId === detailOrder.id),
               )
-              if (Math.abs(f.remainingAmount) < 0.5) return null
+              if (Math.abs(f.remainingAmount) < 0.5 && Math.abs(detailOrder.debt) < 0.5) return null
               return (
                 <div className="rounded-2xl bg-amber-50 p-3 text-sm">
                   <p>
-                    Dư giao (cam kết − đã giao): <strong className="num">{formatMoney(f.remainingAmount)}</strong>
-                    {f.remainingAmount > 0 ? ' — giao thiếu' : ' — giao thừa'}
+                    Công nợ đơn (KL giao × ĐG − ứng): <strong className="num">{formatMoney(detailOrder.debt)}</strong>
                   </p>
-                  {writable && detailOrder.deliveryVarianceApplied == null ? (
-                    <Button
-                      size="sm"
-                      className="mt-2"
-                      onClick={async () => {
-                        try {
-                          await applyDeliveryVariance(detailOrder.id, f.remainingAmount)
-                          setDetailOrder({ ...detailOrder, deliveryVarianceApplied: f.remainingAmount })
-                          setMessage('Đã trừ dư giao vào công nợ khách.')
-                        } catch (err) {
-                          setMessage(err instanceof Error ? err.message : 'Không trừ được dư giao.')
-                        }
-                      }}
-                    >
-                      Trừ dư vào công nợ
-                    </Button>
-                  ) : detailOrder.deliveryVarianceApplied != null ? (
-                    <p className="mt-1 text-xs text-muted">Đã trừ {formatMoney(detailOrder.deliveryVarianceApplied)} vào công nợ.</p>
-                  ) : null}
+                  <p className="mt-1 text-xs text-muted">
+                    Cam kết còn {formatMoney(f.remainingAmount)}
+                    {f.remainingAmount > 0 ? ' (chưa giao hết — không ghi nợ phần này)' : f.remainingAmount < 0 ? ' (giao vượt kế hoạch)' : ''}
+                  </p>
                 </div>
               )
             })()}

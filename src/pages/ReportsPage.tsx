@@ -396,7 +396,7 @@ export function ReportsPage() {
                     <p className="num text-xl font-bold">{formatMoney(cust.totalPurchased || 0)}</p>
                   </div>
                   <div className="rounded-2xl bg-amber-50 p-3">
-                    <p className="text-xs text-muted">Công nợ (thẻ)</p>
+                    <p className="text-xs text-muted">Công nợ (giao × ĐG − đã thu)</p>
                     <p className="num text-xl font-bold text-warn">{formatMoney(cust.totalDebt || 0)}</p>
                   </div>
                 </div>

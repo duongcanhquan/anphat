@@ -19,7 +19,7 @@ import {
 import { db } from './firebase'
 import { applyCarryOnClose, canReceiveQty, plannedQtyFromAmount, purchaseLineTotal, resolveOrderAmount, resolvePlannedWeight } from './purchase'
 import { allocateDeductedQty, mergeDeductItems } from './production'
-import { deliveryVarianceDebtDelta } from './customerDebt'
+import { orderCustomerDebt } from './customerDebt'
 import type {
   AppUser,
   Material,
@@ -346,7 +346,7 @@ export async function createPayment(data: Omit<DebtPayment, 'id'>) {
     if (snap.exists()) {
       const c = snap.data() as Customer
       await updateDoc(custRef, {
-        totalDebt: Math.max(0, (c.totalDebt || 0) - data.amount),
+        totalDebt: (c.totalDebt || 0) - data.amount,
         updatedAt: Date.now(),
       })
     }
@@ -951,35 +951,53 @@ export async function createSalesDelivery(data: Omit<SalesDelivery, 'id'>): Prom
     const lineTotal =
       data.lineTotal != null ? roundMoneySafe(data.lineTotal) : purchaseLineTotal(qty, data.unitPrice)
 
-    if (data.orderId) {
-      const orderRef = doc(db, COL.orders, data.orderId)
-      const orderSnap = await tx.get(orderRef)
-      if (!orderSnap.exists()) throw new Error('Không tìm thấy đơn bán')
-      const order = { id: orderSnap.id, ...orderSnap.data() } as Order
+    const orderRef = data.orderId ? doc(db, COL.orders, data.orderId) : null
+    const orderSnap = orderRef ? await tx.get(orderRef) : null
+    let billed = lineTotal
+    let order: Order | null = null
+    if (orderRef) {
+      if (!orderSnap?.exists()) throw new Error('Không tìm thấy đơn bán')
+      order = { id: orderSnap.id, ...orderSnap.data() } as Order
       if (data.orderLineId && !(order.lines || []).some((l) => l.id === data.orderLineId)) {
         throw new Error('Không tìm thấy dòng đơn bán')
       }
-      // Lũy kế theo phiếu; không sửa totalAmount đơn (cam kết giữ nguyên)
-      void order
-    } else {
-      const custRef = doc(db, COL.customers, data.customerId)
-      const custSnap = await tx.get(custRef)
-      if (!custSnap.exists()) throw new Error('Không tìm thấy khách hàng')
-      const cust = custSnap.data() as Customer
-      const now = Date.now()
+      const line = data.orderLineId ? (order.lines || []).find((l) => l.id === data.orderLineId) : undefined
+      const price = Number(line?.unitPrice) || Number(data.unitPrice) || 0
+      billed = roundMoneySafe(qty * price)
+    }
+    const custRef = doc(db, COL.customers, data.customerId)
+    const custSnap = await tx.get(custRef)
+    if (!custSnap.exists()) throw new Error('Không tìm thấy khách hàng')
+    const cust = custSnap.data() as Customer
+
+    const now = Date.now()
+    const bookDebt = !order || order.status !== 'draft'
+    if (bookDebt) {
       tx.update(custRef, {
-        totalDebt: (Number(cust.totalDebt) || 0) + lineTotal,
-        totalPurchased: (Number(cust.totalPurchased) || 0) + lineTotal,
+        totalDebt: (Number(cust.totalDebt) || 0) + billed,
+        totalPurchased: (Number(cust.totalPurchased) || 0) + billed,
         updatedAt: now,
       })
     }
-
-    const now = Date.now()
+    if (order && orderRef && bookDebt) {
+      const paidList = order.payments || []
+      const paid = paidList.length
+        ? paidList.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+        : Number(order.paidAmount) || 0
+      const prevDelivered = (Number(order.debt) || 0) + paid
+      tx.update(orderRef, {
+        debt: orderCustomerDebt({ deliveredAmount: prevDelivered + billed, paidAmount: paid }),
+        updatedAt: now,
+      })
+    }
     tx.set(
       ref,
       stripUndefined({
         ...data,
-        lineTotal,
+        lineTotal: billed,
+        unitPrice: order
+          ? Number((order.lines || []).find((l) => l.id === data.orderLineId)?.unitPrice) || data.unitPrice
+          : data.unitPrice,
         updatedAt: now,
       } as Record<string, unknown>),
     )
@@ -1100,26 +1118,6 @@ export async function addSupplierPayment(data: Omit<SupplierPayment, 'id'>): Pro
     tx.update(supRef, { totalDebt: (Number(sup.totalDebt) || 0) - amt, updatedAt: now })
   })
   return ref.id
-}
-
-/** Trừ dư giao (cam kết − đã giao) vào thẻ nợ khách. Chỉ một lần / đơn. */
-export async function applyDeliveryVariance(orderId: string, remainingAmount: number): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const orderRef = doc(db, COL.orders, orderId)
-    const orderSnap = await tx.get(orderRef)
-    if (!orderSnap.exists()) throw new Error('Không tìm thấy đơn')
-    const order = { id: orderSnap.id, ...orderSnap.data() } as Order
-    if (order.deliveryVarianceApplied != null) throw new Error('Đơn này đã trừ dư giao vào công nợ.')
-    if (!order.customerId) throw new Error('Đơn thiếu khách hàng')
-    const custRef = doc(db, COL.customers, order.customerId)
-    const custSnap = await tx.get(custRef)
-    if (!custSnap.exists()) throw new Error('Không tìm thấy khách hàng')
-    const cust = custSnap.data() as Customer
-    const delta = deliveryVarianceDebtDelta(remainingAmount)
-    const now = Date.now()
-    tx.update(orderRef, { deliveryVarianceApplied: remainingAmount, updatedAt: now })
-    tx.update(custRef, { totalDebt: (Number(cust.totalDebt) || 0) + delta, updatedAt: now })
-  })
 }
 
 export function watchFuelReadings(cb: (items: FuelReading[]) => void): Unsubscribe {
