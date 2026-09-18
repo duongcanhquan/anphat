@@ -15,8 +15,9 @@ import type { CompanySettings, Conversion, Material, StockEntry, WeightUnit } fr
 import { allWeightUnits, canWrite, stockLevel } from '@/types'
 import { stockDualUnits } from '@/components/FormulaBuilder'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
+import { FuelPanel } from '@/pages/FuelPanel'
 
-type WarehouseTab = 'kho' | 'tong-ket' | 'lich-su'
+type WarehouseTab = 'kho' | 'dau' | 'tong-ket' | 'lich-su'
 
 type StockRow = {
   key: string
@@ -187,12 +188,15 @@ export function WarehousePage() {
       <Tabs
         tabs={[
           { id: 'kho', label: 'Kho' },
+          { id: 'dau', label: 'Dầu diesel' },
           { id: 'tong-ket', label: 'Tổng kết kho' },
           { id: 'lich-su', label: 'Lịch sử nhập xuất' },
         ]}
         value={tab}
         onChange={(id) => setTab(id as WarehouseTab)}
       />
+
+      {tab === 'dau' && <FuelPanel />}
 
       {tab === 'kho' && (
         <>

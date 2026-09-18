@@ -19,6 +19,7 @@ import {
 import { db } from './firebase'
 import { applyCarryOnClose, canReceiveQty, plannedQtyFromAmount, purchaseLineTotal, resolveOrderAmount, resolvePlannedWeight } from './purchase'
 import { allocateDeductedQty, mergeDeductItems } from './production'
+import { deliveryVarianceDebtDelta } from './customerDebt'
 import type {
   AppUser,
   Material,
@@ -38,6 +39,8 @@ import type {
   PurchaseReceiptDoc,
   ProductionOrder,
   SalesDelivery,
+  SupplierPayment,
+  FuelReading,
 } from '@/types'
 
 const COL = {
@@ -56,6 +59,8 @@ const COL = {
   purchaseReceipts: 'purchaseReceipts',
   productionOrders: 'productionOrders',
   salesDeliveries: 'salesDeliveries',
+  supplierPayments: 'supplierPayments',
+  fuelReadings: 'fuelReadings',
 } as const
 
 export const DEFAULT_SETTINGS: CompanySettings = {
@@ -386,6 +391,10 @@ export function generateSalesDeliveryCode(date = new Date()): string {
 
 export function generateProductionCode(date = new Date()): string {
   return generateCode('SX', date)
+}
+
+export function generateFuelCode(date = new Date()): string {
+  return generateCode('DAU', date)
 }
 
 // ——— Suppliers ———
@@ -1066,6 +1075,106 @@ export async function cancelPurchaseOrder(poId: string): Promise<void> {
 export async function createAuditLog(data: Omit<AuditLog, 'id'>) {
   const ref = await addDoc(collection(db, COL.auditLogs), stripUndefined({ ...data }))
   return ref.id
+}
+
+export function watchSupplierPayments(cb: (items: SupplierPayment[]) => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL.supplierPayments), orderBy('paidAt', 'desc')),
+    (snap) => {
+      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SupplierPayment))
+    },
+  )
+}
+
+export async function addSupplierPayment(data: Omit<SupplierPayment, 'id'>): Promise<string> {
+  const ref = doc(collection(db, COL.supplierPayments))
+  await runTransaction(db, async (tx) => {
+    const amt = Number(data.amount) || 0
+    if (!(amt > 0)) throw new Error('Số tiền phải > 0')
+    const supRef = doc(db, COL.suppliers, data.supplierId)
+    const snap = await tx.get(supRef)
+    if (!snap.exists()) throw new Error('Không tìm thấy NCC')
+    const sup = snap.data() as Supplier
+    const now = Date.now()
+    tx.set(ref, stripUndefined({ ...data } as Record<string, unknown>))
+    tx.update(supRef, { totalDebt: (Number(sup.totalDebt) || 0) - amt, updatedAt: now })
+  })
+  return ref.id
+}
+
+/** Trừ dư giao (cam kết − đã giao) vào thẻ nợ khách. Chỉ một lần / đơn. */
+export async function applyDeliveryVariance(orderId: string, remainingAmount: number): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    const orderRef = doc(db, COL.orders, orderId)
+    const orderSnap = await tx.get(orderRef)
+    if (!orderSnap.exists()) throw new Error('Không tìm thấy đơn')
+    const order = { id: orderSnap.id, ...orderSnap.data() } as Order
+    if (order.deliveryVarianceApplied != null) throw new Error('Đơn này đã trừ dư giao vào công nợ.')
+    if (!order.customerId) throw new Error('Đơn thiếu khách hàng')
+    const custRef = doc(db, COL.customers, order.customerId)
+    const custSnap = await tx.get(custRef)
+    if (!custSnap.exists()) throw new Error('Không tìm thấy khách hàng')
+    const cust = custSnap.data() as Customer
+    const delta = deliveryVarianceDebtDelta(remainingAmount)
+    const now = Date.now()
+    tx.update(orderRef, { deliveryVarianceApplied: remainingAmount, updatedAt: now })
+    tx.update(custRef, { totalDebt: (Number(cust.totalDebt) || 0) + delta, updatedAt: now })
+  })
+}
+
+export function watchFuelReadings(cb: (items: FuelReading[]) => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL.fuelReadings), orderBy('createdAt', 'desc')),
+    (snap) => {
+      cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FuelReading))
+    },
+  )
+}
+
+/** Ghi lần đổ dầu + trừ kho (tồn không âm). */
+export async function createFuelReading(data: Omit<FuelReading, 'id' | 'stockEntryId'>): Promise<string> {
+  const fuelRef = doc(collection(db, COL.fuelReadings))
+  const qty = Number(data.quantity) || 0
+  if (!(qty > 0)) throw new Error('Số lít phải > 0')
+  await runTransaction(db, async (tx) => {
+    const matRef = doc(db, COL.materials, data.materialId)
+    const matSnap = await tx.get(matRef)
+    if (!matSnap.exists()) throw new Error('Không tìm thấy vật liệu diesel')
+    const mat = matSnap.data() as Material
+    const take = Math.min(Math.max(0, Number(mat.stock) || 0), qty)
+    const now = Date.now()
+    let stockEntryId = ''
+    if (take > 0) {
+      tx.update(matRef, { stock: (Number(mat.stock) || 0) - take, updatedAt: now })
+      const exportRef = doc(collection(db, COL.stockEntries))
+      stockEntryId = exportRef.id
+      tx.set(exportRef, {
+        materialId: mat.id,
+        materialName: data.materialName || mat.name,
+        quantity: take,
+        unit: data.unit || mat.unit,
+        cost: 0,
+        contractor: '',
+        note: data.note || `Xuất dầu ${data.code}`,
+        createdAt: now,
+        createdBy: data.createdBy || '',
+        createdByName: data.createdByName || '',
+        type: 'export',
+        fuelReadingId: fuelRef.id,
+      })
+    }
+    tx.set(
+      fuelRef,
+      stripUndefined({
+        ...data,
+        quantity: qty,
+        deductedQuantity: take,
+        stockEntryId,
+        createdAt: data.createdAt || now,
+      } as Record<string, unknown>),
+    )
+  })
+  return fuelRef.id
 }
 
 export function watchAuditLogs(cb: (items: AuditLog[]) => void): Unsubscribe {

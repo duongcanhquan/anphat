@@ -17,6 +17,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
+  applyDeliveryVariance,
   createAuditLog,
   createCustomer,
   createOrder,
@@ -70,6 +71,8 @@ import {
   resolveOrderStatus,
   statusFromPayment,
 } from '@/types'
+import { customerDebtDelta, customerPurchasedDelta, isPostedSalesStatus } from '@/lib/customerDebt'
+import { orderFulfillment } from '@/lib/salesDelivery'
 import { cn, formatDateTime, formatMoney, formatNumber, fromDateInputValue, toDateInputValue, uid } from '@/lib/utils'
 import { OrderFulfillmentHint, SalesDeliveryPanel } from '@/pages/SalesDeliveryPanel'
 
@@ -149,6 +152,30 @@ function LineExtrasEditor({
     <div className="mt-3 space-y-3">
       <div className="rounded-xl bg-surface/80 p-3">
         <p className="mb-2 text-sm font-semibold">VAT (cộng thêm)</p>
+        <div className="mb-2 flex flex-wrap gap-2">
+          {([
+            [0, 'Không VAT'],
+            [8, 'VAT 8%'],
+            [10, 'VAT 10%'],
+          ] as const).map(([rate, label]) => (
+            <Button
+              key={rate}
+              type="button"
+              size="sm"
+              variant={vat?.mode === 'percent' && (vat?.amount || 0) === rate ? 'primary' : 'outline'}
+              disabled={!writable}
+              onClick={() => {
+                if (rate === 0) {
+                  onChange(line.extras.filter((e) => e.type !== 'vat'))
+                  return
+                }
+                upsert('vat', { mode: 'percent', amount: rate, label: `VAT ${rate}%` })
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(7rem,8rem)_minmax(0,1fr)]">
           <Select
             label="Kiểu"
@@ -764,10 +791,22 @@ export function SalesPage() {
             })
           }
         }
-        await updateCustomer(cust.id, {
-          totalPurchased: Math.max(0, (cust.totalPurchased || 0) - editingOrder.totalAmount + totalAmount),
-          totalDebt: Math.max(0, (cust.totalDebt || 0) - oldDebt + finalDebt),
-        })
+        {
+          const wasPosted = isPostedSalesStatus(normalizeOrderStatus(editingOrder.status))
+          const dDebt = customerDebtDelta({ wasPosted, nextStatus: status, oldDebt, nextDebt: finalDebt })
+          const dBuy = customerPurchasedDelta({
+            wasPosted,
+            nextStatus: status,
+            oldTotal: editingOrder.totalAmount,
+            nextTotal: totalAmount,
+          })
+          if (dDebt != null || dBuy != null) {
+            await updateCustomer(cust.id, {
+              ...(dBuy != null ? { totalPurchased: Math.max(0, (cust.totalPurchased || 0) + dBuy) } : {}),
+              ...(dDebt != null ? { totalDebt: (cust.totalDebt || 0) + dDebt } : {}),
+            })
+          }
+        }
         await createAuditLog({
           entityType: 'order',
           entityId: editingOrder.id,
@@ -796,10 +835,26 @@ export function SalesPage() {
             })
           }
         }
-        await updateCustomer(cust.id, {
-          totalPurchased: (cust.totalPurchased || 0) + totalAmount,
-          totalDebt: (cust.totalDebt || 0) + finalDebt,
-        })
+        {
+          const dDebt = customerDebtDelta({
+            wasPosted: false,
+            nextStatus: status,
+            oldDebt: 0,
+            nextDebt: finalDebt,
+          })
+          const dBuy = customerPurchasedDelta({
+            wasPosted: false,
+            nextStatus: status,
+            oldTotal: 0,
+            nextTotal: totalAmount,
+          })
+          if (dDebt != null || dBuy != null) {
+            await updateCustomer(cust.id, {
+              ...(dBuy != null ? { totalPurchased: (cust.totalPurchased || 0) + dBuy } : {}),
+              ...(dDebt != null ? { totalDebt: (cust.totalDebt || 0) + dDebt } : {}),
+            })
+          }
+        }
         await createAuditLog({
           entityType: 'order',
           entityId: id,
@@ -919,9 +974,25 @@ export function SalesPage() {
       const cust = customers.find((c) => c.id === detailOrder.customerId)
       await updateOrder(detailOrder.id, patch)
       if (cust) {
-        await updateCustomer(cust.id, {
-          totalDebt: Math.max(0, (cust.totalDebt || 0) - detailOrder.debt + nextDebt),
+        const wasPosted = isPostedSalesStatus(normalizeOrderStatus(detailOrder.status))
+        const dDebt = customerDebtDelta({
+          wasPosted,
+          nextStatus: nextStatus,
+          oldDebt: detailOrder.debt || 0,
+          nextDebt,
         })
+        const dBuy = customerPurchasedDelta({
+          wasPosted,
+          nextStatus: nextStatus,
+          oldTotal: detailOrder.totalAmount,
+          nextTotal: detailOrder.totalAmount,
+        })
+        if (dDebt != null || dBuy != null) {
+          await updateCustomer(cust.id, {
+            ...(dBuy != null ? { totalPurchased: Math.max(0, (cust.totalPurchased || 0) + dBuy) } : {}),
+            ...(dDebt != null ? { totalDebt: (cust.totalDebt || 0) + dDebt } : {}),
+          })
+        }
       }
       await createAuditLog({
         entityType: 'order',
@@ -1570,6 +1641,40 @@ export function SalesPage() {
               )}
             </div>
 
+            {(() => {
+              const f = orderFulfillment(
+                detailOrder.lines || [],
+                deliveries.filter((d) => d.orderId === detailOrder.id),
+              )
+              if (Math.abs(f.remainingAmount) < 0.5) return null
+              return (
+                <div className="rounded-2xl bg-amber-50 p-3 text-sm">
+                  <p>
+                    Dư giao (cam kết − đã giao): <strong className="num">{formatMoney(f.remainingAmount)}</strong>
+                    {f.remainingAmount > 0 ? ' — giao thiếu' : ' — giao thừa'}
+                  </p>
+                  {writable && detailOrder.deliveryVarianceApplied == null ? (
+                    <Button
+                      size="sm"
+                      className="mt-2"
+                      onClick={async () => {
+                        try {
+                          await applyDeliveryVariance(detailOrder.id, f.remainingAmount)
+                          setDetailOrder({ ...detailOrder, deliveryVarianceApplied: f.remainingAmount })
+                          setMessage('Đã trừ dư giao vào công nợ khách.')
+                        } catch (err) {
+                          setMessage(err instanceof Error ? err.message : 'Không trừ được dư giao.')
+                        }
+                      }}
+                    >
+                      Trừ dư vào công nợ
+                    </Button>
+                  ) : detailOrder.deliveryVarianceApplied != null ? (
+                    <p className="mt-1 text-xs text-muted">Đã trừ {formatMoney(detailOrder.deliveryVarianceApplied)} vào công nợ.</p>
+                  ) : null}
+                </div>
+              )
+            })()}
             {(detailOrder.lines || []).map((l) => (
               <div key={l.id} className="rounded-2xl bg-surface px-3 py-3">
                 <p className="font-semibold">{l.formulaName} × {formatNumber(l.quantity)} {normalizeUnit(l.unit)}</p>

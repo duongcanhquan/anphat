@@ -96,8 +96,41 @@ test('theo dõi đơn: còn lại được âm khi SX vượt', () => {
     ],
   })
   assert.equal(t[0].orderValue, 20_000_000)
+  assert.equal(t[0].producedValue, 25_000_000)
   assert.equal(t[0].fulfilledValue, 25_000_000)
   assert.equal(t[0].remainingValue, -5_000_000)
+})
+
+test('theo dõi đơn: đã thực hiện = sl × ĐG đơn gốc, tách đã giao', () => {
+  const t = salesOrderTracking({
+    orders: [{
+      id: 'o1',
+      code: 'AP1',
+      totalAmount: 22_000_000,
+      status: 'dang_lam',
+      lines: [{ quantity: 100, unitPrice: 200_000 }],
+    }],
+    productions: [{ salesOrderId: 'o1', status: 'confirmed', quantity: 100, salesUnitPrice: 200_000 }],
+    deliveries: [{ orderId: 'o1', quantity: 80, unitPrice: 200_000, lineTotal: 16_000_000 }],
+  })
+  assert.equal(t[0].orderValue, 20_000_000)
+  assert.equal(t[0].producedValue, 20_000_000)
+  assert.equal(t[0].deliveredValue, 16_000_000)
+  assert.equal(t[0].remainingDeliverValue, 4_000_000)
+})
+
+test('sổ NCC cộng mua lẻ và trả lẻ', () => {
+  const rows = supplierPeriodLedger({
+    from: 100,
+    to: 200,
+    suppliers: [{ id: 's1', name: 'A', openingDebt: 0, openingAt: 0 }],
+    orders: [],
+    spotPurchases: [{ supplierId: 's1', amount: 3_000_000, at: 150 }],
+    spotPayments: [{ supplierId: 's1', amount: 1_000_000, at: 160 }],
+  })
+  assert.equal(rows[0].purchases, 3_000_000)
+  assert.equal(rows[0].payments, 1_000_000)
+  assert.equal(rows[0].closing, 2_000_000)
 })
 
 test('theo dõi đơn bỏ đơn huỷ; lệnh không gắn không cộng', () => {

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
-import { Badge, Bento, Button, Empty, Input, Modal, PageHeader, SearchableSelect, Tabs, Textarea } from '@/components/ui'
+import { Badge, Bento, Button, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Tabs, Textarea } from '@/components/ui'
 import { MoneyInput } from '@/components/MoneyInput'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   addPurchasePayment,
+  addSupplierPayment,
   cancelPurchaseOrder,
   closePurchaseOrder,
   confirmDraftPurchaseOrder,
@@ -18,6 +19,7 @@ import {
   watchMaterials,
   watchPurchaseOrders,
   watchPurchaseReceipts,
+  watchSupplierPayments,
   watchSuppliers,
 } from '@/lib/store'
 import {
@@ -28,8 +30,8 @@ import {
   resolvePlannedWeight,
   wouldExceedPlan,
 } from '@/lib/purchase'
-import type { Material, PurchaseOrder, PurchasePayment, PurchaseReceipt, PurchaseReceiptDoc, Supplier } from '@/types'
-import { PURCHASE_STATUS_LABELS, canWrite } from '@/types'
+import type { Material, MoneyMethod, PurchaseOrder, PurchasePayment, PurchaseReceipt, PurchaseReceiptDoc, Supplier, SupplierPayment } from '@/types'
+import { MONEY_METHOD_LABELS, PURCHASE_STATUS_LABELS, canWrite } from '@/types'
 import { formatDate, formatDateTime, formatMoney, formatNumber, fromDateInputValue, toDateInputValue, uid } from '@/lib/utils'
 
 function statusTone(s: PurchaseOrder['status']): 'info' | 'warn' | 'ok' | 'danger' {
@@ -86,6 +88,11 @@ export function PurchasePage() {
 
   const [payAmt, setPayAmt] = useState(0)
   const [payNote, setPayNote] = useState('')
+  const [payMethod, setPayMethod] = useState<MoneyMethod>('transfer')
+  const [spotPaySupId, setSpotPaySupId] = useState('')
+  const [spotPayAmt, setSpotPayAmt] = useState(0)
+  const [spotPayMethod, setSpotPayMethod] = useState<MoneyMethod>('cash')
+  const [supPays, setSupPays] = useState<SupplierPayment[]>([])
   const [closeAsk, setCloseAsk] = useState(false)
 
   // Nhập thực tế
@@ -104,7 +111,8 @@ export function PurchasePage() {
     const u2 = watchMaterials(setMaterials)
     const u3 = watchPurchaseOrders(setOrders)
     const u4 = watchPurchaseReceipts(setReceipts)
-    return () => { u1(); u2(); u3(); u4() }
+    const u5 = watchSupplierPayments(setSupPays)
+    return () => { u1(); u2(); u3(); u4(); u5() }
   }, [])
 
   useEffect(() => {
@@ -413,6 +421,7 @@ export function PurchasePage() {
         amount: payAmt,
         note: payNote.trim() || 'Chuyển tiền',
         paidAt: Date.now(),
+        method: payMethod,
         createdBy: profile.id,
         createdByName: profile.displayName,
       }
@@ -422,6 +431,38 @@ export function PurchasePage() {
       setMsg('Đã ghi lần chuyển tiền.')
     } catch (err) {
       setMsg(err instanceof Error ? err.message : 'Không ghi được tiền.')
+    } finally {
+      inflight.current = false
+      setBusy(false)
+    }
+  }
+
+  const paySpot = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!writable || !profile || inflight.current) return
+    const sup = suppliers.find((s) => s.id === spotPaySupId)
+    if (!sup || !(spotPayAmt > 0)) {
+      setMsg('Chọn NCC và nhập số tiền > 0.')
+      return
+    }
+    inflight.current = true
+    setBusy(true)
+    try {
+      await addSupplierPayment({
+        supplierId: sup.id,
+        supplierName: sup.name,
+        amount: spotPayAmt,
+        method: spotPayMethod,
+        note: 'Trả mua lẻ',
+        paidAt: Date.now(),
+        createdAt: Date.now(),
+        createdBy: profile.id,
+        createdByName: profile.displayName,
+      })
+      setSpotPayAmt(0)
+      setMsg(`Đã trả ${MONEY_METHOD_LABELS[spotPayMethod]} cho ${sup.name}.`)
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Không trả được tiền mua lẻ.')
     } finally {
       inflight.current = false
       setBusy(false)
@@ -555,6 +596,38 @@ export function PurchasePage() {
 
       {tab === 'nhap' && (
         <div className="mt-3 space-y-2">
+          {writable && (
+            <form className="bento flex flex-wrap items-end gap-2 p-4" onSubmit={(e) => void paySpot(e)}>
+              <SearchableSelect
+                label="Trả tiền mua lẻ — NCC"
+                value={spotPaySupId}
+                onChange={setSpotPaySupId}
+                options={suppliers.filter((s) => s.active !== false).map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                  hint: `Nợ ${formatMoney(s.totalDebt || 0)}`,
+                }))}
+                placeholder="— Chọn NCC —"
+              />
+              <MoneyInput label="Số tiền" value={spotPayAmt} onChange={setSpotPayAmt} />
+              <Select label="Hình thức" value={spotPayMethod} onChange={(e) => setSpotPayMethod(e.target.value as MoneyMethod)}>
+                <option value="cash">Tiền mặt</option>
+                <option value="transfer">Chuyển khoản</option>
+              </Select>
+              <Button type="submit" disabled={busy}>Ghi trả mua lẻ</Button>
+            </form>
+          )}
+          {supPays.length > 0 && (
+            <div className="bento p-4 text-sm">
+              <p className="mb-2 font-semibold">Đã trả mua lẻ</p>
+              {supPays.slice(0, 8).map((p) => (
+                <div key={p.id} className="flex justify-between gap-2">
+                  <span>{p.supplierName} · {MONEY_METHOD_LABELS[p.method]}</span>
+                  <span className="num font-bold">{formatMoney(p.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {receipts.length === 0 ? (
             <Empty text="Chưa có phiếu nhập thực tế." />
           ) : (
@@ -815,6 +888,10 @@ export function PurchasePage() {
                 </Button>
                 <form className="flex flex-wrap items-end gap-2" onSubmit={pay}>
                   <MoneyInput label="Chuyển tiền (thường chẵn)" value={payAmt} onChange={setPayAmt} />
+                  <Select label="Hình thức" value={payMethod} onChange={(e) => setPayMethod(e.target.value as MoneyMethod)}>
+                    <option value="transfer">Chuyển khoản</option>
+                    <option value="cash">Tiền mặt</option>
+                  </Select>
                   <Input label="Ghi chú" value={payNote} onChange={(e) => setPayNote(e.target.value)} />
                   <Button type="submit" disabled={busy}>Ghi chuyển</Button>
                 </form>
@@ -852,7 +929,7 @@ export function PurchasePage() {
                 <p className="mb-1 text-sm font-semibold">Lịch sử chuyển tiền</p>
                 {(live.payments || []).map((p) => (
                   <div key={p.id} className="flex justify-between text-sm">
-                    <span>{formatDateTime(p.paidAt)} · {p.note}</span>
+                    <span>{formatDateTime(p.paidAt)} · {p.method ? MONEY_METHOD_LABELS[p.method] : 'Chuyển khoản'} · {p.note}</span>
                     <span className="num font-bold">{formatMoney(p.amount)}</span>
                   </div>
                 ))}

@@ -151,6 +151,18 @@ service cloud.firestore {
       allow delete: if isSuper();
     }
 
+    match /supplierPayments/{id} {
+      allow read: if isActive();
+      allow create: if isAdmin();
+      allow update, delete: if isSuper();
+    }
+
+    match /fuelReadings/{id} {
+      allow read: if isActive();
+      allow create, update: if isAdmin();
+      allow delete: if isSuper();
+    }
+
     match /auditLogs/{id} {
       allow read: if isSuper() || isAdmin();
       allow create: if isAdmin();

@@ -166,6 +166,31 @@ export interface StockEntry {
   purchaseOrderId?: string
   supplierId?: string
   productionOrderId?: string
+  fuelReadingId?: string
+}
+
+export interface FuelReading {
+  id: string
+  code: string
+  materialId: string
+  materialName: string
+  quantity: number
+  /** Số thực trừ kho (≤ quantity nếu tồn không đủ). */
+  deductedQuantity?: number
+  unit: string
+  unitPrice?: number
+  totalAmount?: number
+  photoKey?: string
+  photoUrl?: string
+  ocrRaw?: string
+  source: 'photo' | 'manual'
+  checkOk?: boolean
+  note: string
+  pumpedAt: number
+  createdAt: number
+  createdBy: string
+  createdByName?: string
+  stockEntryId?: string
 }
 
 export interface Conversion {
@@ -326,6 +351,8 @@ export interface Order {
   payments?: OrderPayment[]
   /** Đã trừ kho chưa (draft chưa trừ) */
   stockDeducted?: boolean
+  /** Đã trừ dư giao (cam kết − đã giao) vào công nợ */
+  deliveryVarianceApplied?: number
 }
 
 export interface CompanySettings {
@@ -371,11 +398,33 @@ export interface Supplier {
   updatedAt: number
 }
 
+export type MoneyMethod = 'cash' | 'transfer'
+
+export const MONEY_METHOD_LABELS: Record<MoneyMethod, string> = {
+  cash: 'Tiền mặt',
+  transfer: 'Chuyển khoản',
+}
+
 export interface PurchasePayment {
   id: string
   amount: number
   note: string
   paidAt: number
+  method?: MoneyMethod
+  createdBy: string
+  createdByName?: string
+}
+
+/** Trả tiền NCC ngoài đơn (mua lẻ) */
+export interface SupplierPayment {
+  id: string
+  supplierId: string
+  supplierName: string
+  amount: number
+  method: MoneyMethod
+  note: string
+  paidAt: number
+  createdAt: number
   createdBy: string
   createdByName?: string
 }

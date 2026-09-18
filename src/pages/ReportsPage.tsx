@@ -10,11 +10,13 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge, Bento, Button, Empty, PageHeader, StatBig, Tabs } from '@/components/ui'
-import { watchCustomers, watchMaterials, watchOrders, watchPayments, watchPurchaseOrders, watchProductionOrders, watchStockEntries, watchSuppliers } from '@/lib/store'
-import type { Customer, DebtPayment, Material, Order, ProductionOrder, PurchaseOrder, StockEntry, Supplier } from '@/types'
-import { ORDER_STATUS_LABELS, normalizeOrderStatus, normalizeUnit, orderPaidTotal, resolveOrderStatus, stockLevel } from '@/types'
+import { watchCustomers, watchMaterials, watchOrders, watchPayments, watchPurchaseOrders, watchPurchaseReceipts, watchProductionOrders, watchSalesDeliveries, watchStockEntries, watchSupplierPayments, watchSuppliers } from '@/lib/store'
+import type { Customer, DebtPayment, Material, Order, ProductionOrder, PurchaseOrder, PurchaseReceiptDoc, SalesDelivery, StockEntry, Supplier, SupplierPayment } from '@/types'
+import { MONEY_METHOD_LABELS, ORDER_STATUS_LABELS, normalizeOrderStatus, normalizeUnit, orderPaidTotal, orderPaymentsList, resolveOrderStatus, stockLevel } from '@/types'
 import { salesOrderTracking, stockPeriodRows, supplierPeriodLedger } from '@/lib/ledger'
+import { applyVatRate, reconcileCustomerMoney } from '@/lib/customerDebt'
 import {
+  formatDate,
   formatDateTime,
   formatMoney,
   formatNumber,
@@ -36,6 +38,10 @@ export function ReportsPage() {
   const [purchases, setPurchases] = useState<PurchaseOrder[]>([])
   const [productions, setProductions] = useState<ProductionOrder[]>([])
   const [entries, setEntries] = useState<StockEntry[]>([])
+  const [deliveries, setDeliveries] = useState<SalesDelivery[]>([])
+  const [purchaseReceipts, setPurchaseReceipts] = useState<PurchaseReceiptDoc[]>([])
+  const [supplierPays, setSupplierPays] = useState<SupplierPayment[]>([])
+  const [vatRate, setVatRate] = useState<0 | 8 | 10>(0)
   const [selectedCustomer, setSelectedCustomer] = useState<string>('')
   const [selectedSupplier, setSelectedSupplier] = useState<string>('')
 
@@ -48,8 +54,11 @@ export function ReportsPage() {
     const u6 = watchPurchaseOrders(setPurchases)
     const u7 = watchProductionOrders(setProductions)
     const u8 = watchStockEntries(setEntries)
+    const u9 = watchSalesDeliveries(setDeliveries)
+    const u10 = watchPurchaseReceipts(setPurchaseReceipts)
+    const u11 = watchSupplierPayments(setSupplierPays)
     return () => {
-      u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8()
+      u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10(); u11()
     }
   }, [])
 
@@ -77,6 +86,13 @@ export function ReportsPage() {
   const cust = customers.find((c) => c.id === selectedCustomer)
   const custOrders = orders.filter((o) => o.customerId === selectedCustomer && normalizeOrderStatus(o.status) !== 'huy')
   const custPayments = payments.filter((p) => p.customerId === selectedCustomer)
+  const custMoney = useMemo(() => {
+    if (!selectedCustomer) return { onOrderPaid: 0, offOrderPaid: 0, combinedPaid: 0 }
+    return reconcileCustomerMoney({
+      orderPayments: custOrders.flatMap((o) => orderPaymentsList(o)),
+      offOrderPayments: custPayments,
+    })
+  }, [selectedCustomer, custOrders, custPayments])
 
   const nccRows = useMemo(
     () =>
@@ -97,8 +113,12 @@ export function ReportsPage() {
           lineTotal: o.orderAmount ?? o.lineTotal,
           payments: (o.payments || []).map((p) => ({ amount: p.amount, paidAt: p.paidAt })),
         })),
+        spotPurchases: purchaseReceipts
+          .filter((r) => !r.purchaseOrderId)
+          .map((r) => ({ supplierId: r.supplierId, amount: r.lineTotal, at: r.receiptAt || r.createdAt })),
+        spotPayments: supplierPays.map((p) => ({ supplierId: p.supplierId, amount: p.amount, at: p.paidAt })),
       }),
-    [range.from, range.to, suppliers, purchases],
+    [range.from, range.to, suppliers, purchases, purchaseReceipts, supplierPays],
   )
 
   const khoRows = useMemo(
@@ -127,6 +147,7 @@ export function ReportsPage() {
           code: o.code,
           totalAmount: o.totalAmount,
           status: normalizeOrderStatus(o.status),
+          lines: (o.lines || []).map((l) => ({ quantity: l.quantity, unitPrice: l.unitPrice })),
         })),
         productions: productions.map((p) => ({
           salesOrderId: p.salesOrderId,
@@ -134,8 +155,22 @@ export function ReportsPage() {
           quantity: p.quantity,
           salesUnitPrice: p.salesUnitPrice || 0,
         })),
-      }),
-    [orders, productions],
+        deliveries: deliveries.map((d) => ({
+          orderId: d.orderId,
+          quantity: d.quantity,
+          unitPrice: d.unitPrice,
+          lineTotal: d.lineTotal,
+        })),
+      }).map((r) => ({
+        ...r,
+        orderValue: applyVatRate(r.orderValue, vatRate),
+        producedValue: applyVatRate(r.producedValue, vatRate),
+        deliveredValue: applyVatRate(r.deliveredValue, vatRate),
+        fulfilledValue: applyVatRate(r.fulfilledValue, vatRate),
+        remainingValue: applyVatRate(r.remainingValue, vatRate),
+        remainingDeliverValue: applyVatRate(r.remainingDeliverValue, vatRate),
+      })),
+    [orders, productions, deliveries, vatRate],
   )
 
   const sup = suppliers.find((s) => s.id === selectedSupplier)
@@ -290,7 +325,11 @@ export function ReportsPage() {
           })}
           {materials.filter((m) => m.active).length === 0 && <Empty text="Chưa có vật liệu." />}
         </div>
-        <Bento className="mt-3" title={`Sổ kho kỳ ${range.label}`}>
+        <Bento
+          className="mt-3"
+          title={`Sổ kho kỳ ${range.label}`}
+          subtitle={`Theo ngày hệ thống ghi kho · Tồn cuối tại ${formatDate(range.to)}`}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -357,8 +396,22 @@ export function ReportsPage() {
                     <p className="num text-xl font-bold">{formatMoney(cust.totalPurchased || 0)}</p>
                   </div>
                   <div className="rounded-2xl bg-amber-50 p-3">
-                    <p className="text-xs text-muted">Công nợ</p>
+                    <p className="text-xs text-muted">Công nợ (thẻ)</p>
                     <p className="num text-xl font-bold text-warn">{formatMoney(cust.totalDebt || 0)}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-xl bg-surface/70 p-2">
+                    <p className="text-xs text-muted">Thu trên đơn</p>
+                    <p className="num font-bold">{formatMoney(custMoney.onOrderPaid)}</p>
+                  </div>
+                  <div className="rounded-xl bg-surface/70 p-2">
+                    <p className="text-xs text-muted">Thu ngoài đơn</p>
+                    <p className="num font-bold">{formatMoney(custMoney.offOrderPaid)}</p>
+                  </div>
+                  <div className="rounded-xl bg-surface/70 p-2">
+                    <p className="text-xs text-muted">Đối chiếu (cộng 2 nguồn)</p>
+                    <p className="num font-bold text-ok">{formatMoney(custMoney.combinedPaid)}</p>
                   </div>
                 </div>
                 <div>
@@ -397,6 +450,7 @@ export function ReportsPage() {
 
       {tab === 'ncc' && (
         <div className="space-y-3">
+          <p className="text-xs text-muted">Sổ kỳ gồm đơn mua đã chốt + mua lẻ + trả lẻ (tiền mặt / CK).</p>
           <p className="text-sm text-muted">Kỳ {range.label} — đổi kỳ ở tab Theo kỳ (cùng mốc ngày).</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -429,6 +483,20 @@ export function ReportsPage() {
           {nccRows.length === 0 && <Empty text="Chưa có nhà cung cấp." />}
           {sup && (
             <Bento title={sup.name} subtitle={`Nợ hiện tại ${formatMoney(sup.totalDebt || 0)}`}>
+              {(() => {
+                const pays = [
+                  ...supPurchases.flatMap((o) => o.payments || []),
+                  ...supplierPays.filter((p) => p.supplierId === sup.id),
+                ]
+                const cash = pays.filter((p) => p.method === 'cash').reduce((s, p) => s + (p.amount || 0), 0)
+                const ck = pays.filter((p) => p.method !== 'cash').reduce((s, p) => s + (p.amount || 0), 0)
+                return (
+                  <p className="mb-2 text-xs text-muted">
+                    Đã trả {MONEY_METHOD_LABELS.cash} {formatMoney(cash)} · {MONEY_METHOD_LABELS.transfer} {formatMoney(ck)}
+                    {' · '}Còn nợ {formatMoney(sup.totalDebt || 0)}
+                  </p>
+                )
+              })()}
               {supPurchases.map((o) => {
                 const amt = o.orderAmount ?? o.lineTotal
                 const weight = o.plannedWeight ?? o.quantity
@@ -450,15 +518,27 @@ export function ReportsPage() {
       )}
 
       {tab === 'don' && (
-        <Bento title="Theo dõi đơn bán" subtitle="Giá trị đơn − sl SX × đơn giá. Còn lại được âm khi SX vượt.">
+        <Bento
+          title="Theo dõi đơn bán"
+          subtitle="Đã thực hiện = sl SX × ĐG đơn gốc (không phải đã giao). Còn giao được âm."
+        >
+          <div className="mb-3 flex flex-wrap gap-2">
+            {([0, 8, 10] as const).map((r) => (
+              <Button key={r} size="sm" variant={vatRate === r ? 'primary' : 'outline'} onClick={() => setVatRate(r)}>
+                {r === 0 ? 'Không VAT' : `VAT ${r}%`}
+              </Button>
+            ))}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted">
                   <th className="pb-1">Đơn</th>
-                  <th>Giá trị đơn</th>
-                  <th>Đã thực hiện</th>
-                  <th>Còn lại</th>
+                  <th>Đơn gốc (sl×ĐG)</th>
+                  <th>Đã SX</th>
+                  <th>Đã giao</th>
+                  <th>Còn SX</th>
+                  <th>Còn giao</th>
                 </tr>
               </thead>
               <tbody>
@@ -466,9 +546,13 @@ export function ReportsPage() {
                   <tr key={r.orderId} className="border-t border-line/60">
                     <td className="py-1.5">{r.code}</td>
                     <td className="num">{formatMoney(r.orderValue)}</td>
-                    <td className="num">{formatMoney(r.fulfilledValue)}</td>
+                    <td className="num">{formatMoney(r.producedValue)}</td>
+                    <td className="num">{formatMoney(r.deliveredValue)}</td>
                     <td className={`num font-bold ${r.remainingValue < 0 ? 'text-danger' : 'text-warn'}`}>
                       {formatMoney(r.remainingValue)}
+                    </td>
+                    <td className={`num font-bold ${r.remainingDeliverValue < 0 ? 'text-danger' : 'text-warn'}`}>
+                      {formatMoney(r.remainingDeliverValue)}
                     </td>
                   </tr>
                 ))}

@@ -433,7 +433,7 @@ export function ProductionPage() {
           )}
           {shortages.length > 0 && (
             <p className="text-sm text-warn">
-              Thiếu hàng: {shortages.map((s) => `${s.materialName} thiếu ${formatNumber(s.short)}`).join(', ')}. Vẫn cho chốt — tồn không xuống âm.
+              Thiếu hàng: {shortages.map((s) => `${s.materialName} thiếu ${formatNumber(s.short)}`).join(', ')}. Vẫn cho chốt — tồn không xuống âm. Điều chỉnh công thức lúc xuất bán nếu cần khớp kho.
             </p>
           )}
           <Textarea label="Ghi chú" value={note} onChange={(e) => setNote(e.target.value)} />

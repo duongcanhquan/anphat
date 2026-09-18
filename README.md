@@ -28,9 +28,31 @@ Xem chi tiết: [FIREBASE_SETUP.md](./FIREBASE_SETUP.md)
 - **Tổng kết**: ngày / tuần (T2–CN) / tháng / năm + công nợ + theo khách
 - **Phân quyền**: Superadmin · Admin · Viewer (chỉ xem)
 
-## Deploy hosting (tùy chọn)
+## Deploy Vercel
 
-```bash
-npm run build
-# deploy thư mục dist lên Firebase Hosting / Vercel / Netlify
+App là Vite SPA. Vercel build `npm run build`, output `dist`, rewrite SPA đã có trong `vercel.json`.
+
+1. [vercel.com](https://vercel.com) → **Add New → Project** → chọn repo GitHub `anphat` (branch `main`).
+2. Framework Preset: **Vite**. Root Directory: để trống (repo chính là app).
+3. **Settings → Environment Variables** (Production + Preview), cùng tên với `.env.example`:
+
 ```
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_STORAGE_BUCKET
+VITE_FIREBASE_MESSAGING_SENDER_ID
+VITE_FIREBASE_APP_ID
+VITE_FIREBASE_MEASUREMENT_ID
+VITE_PHOTO_WORKER_URL=https://anphat-photos.duongcanhquan.workers.dev
+```
+
+Biến `VITE_*` được **nướng lúc build**. Đổi URL ảnh / Firebase xong phải **Redeploy**.
+
+4. Firebase Console → Authentication → Settings → **Authorized domains** → thêm:
+   - `localhost`
+   - domain Vercel (`….vercel.app`) và domain riêng nếu có
+5. Publish Firestore rules (`firestore.rules`) — collection `supplierPayments` và `fuelReadings`.
+6. Mỗi push `main` Vercel tự build bản mới.
+
+Chạy local không cần Vercel: `cp .env.example .env` rồi `npm run dev`.

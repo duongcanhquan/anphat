@@ -304,8 +304,9 @@ export function OrderFulfillmentHint({ order, deliveries }: { order: Order; deli
   const f = orderFulfillment(order.lines || [], related)
   return (
     <p className="text-xs text-muted">
-      Đã xuất {formatNumber(f.deliveredQty)} ({formatMoney(f.deliveredAmount)})
-      · Còn {formatNumber(f.remainingQty)} / {formatMoney(f.remainingAmount)}
+      Đã giao {formatNumber(f.deliveredQty)} ({formatMoney(f.deliveredAmount)})
+      · Còn giao {formatNumber(f.remainingQty)} / {formatMoney(f.remainingAmount)}
+      {order.deliveryVarianceApplied != null ? ' · đã trừ dư vào công nợ' : ''}
     </p>
   )
 }
