@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfDay, endOfDay } from 'date-fns'
 import { vi } from 'date-fns/locale'
+import { displayDateToIso } from './dateInput'
 
 export function cn(...inputs: (string | false | null | undefined)[]) {
   return clsx(inputs)
@@ -72,10 +73,12 @@ export function toDateInputValue(ts: number): string {
   return `${y}-${m}-${day}`
 }
 
-/** Parse từ <input type="date"> → timestamp (giữa ngày local) */
+/** Parse ngày: yyyy-mm-dd hoặc DD/MM/YYYY → timestamp (giữa ngày local) */
 export function fromDateInputValue(s: string): number {
   if (!s) return Date.now()
-  const [y, m, d] = s.split('-').map(Number)
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(s.trim()) ? s.trim().slice(0, 10) : displayDateToIso(s)
+  if (!iso) return Date.now()
+  const [y, m, d] = iso.split('-').map(Number)
   if (!y || !m || !d) return Date.now()
   return new Date(y, m - 1, d, 12, 0, 0, 0).getTime()
 }

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
-import { Button, Empty, Input, SearchableSelect, Textarea } from '@/components/ui'
+import { Button, DateField, Empty, Input, SearchableSelect, Textarea } from '@/components/ui'
 import { MoneyInput } from '@/components/MoneyInput'
 import {
   createCustomer,
@@ -261,7 +261,7 @@ export function SalesDeliveryPanel({
               />
             </>
           )}
-          <Input label="Ngày xuất" type="date" value={soldAt} onChange={(e) => setSoldAt(e.target.value)} required />
+          <DateField label="Ngày xuất" value={soldAt} onChange={setSoldAt} required />
           <div className="grid grid-cols-2 gap-2">
             <Input label="Số lượng" type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required />
             <MoneyInput label="Đơn giá" value={unitPrice} onChange={setUnitPrice} />

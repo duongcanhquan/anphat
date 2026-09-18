@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
-import { Badge, Button, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Textarea } from '@/components/ui'
+import { Badge, Button, DateField, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Textarea } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   cancelProductionOrder,
@@ -362,7 +362,7 @@ export function ProductionPage() {
             <Input label="Sản lượng" type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required />
             <Input label="Hệ số đá" type="number" step="any" value={stoneFactor} onChange={(e) => setStoneFactor(e.target.value)} />
           </div>
-          <Input label="Ngày sản xuất" type="date" value={producedAt} onChange={(e) => setProducedAt(e.target.value)} required />
+          <DateField label="Ngày sản xuất" value={producedAt} onChange={setProducedAt} required />
           <SearchableSelect
             label="Khách hàng"
             value={customerId}

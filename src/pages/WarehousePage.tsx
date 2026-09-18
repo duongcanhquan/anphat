@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Plus, Trash2, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
-import { Bento, Badge, Button, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Tabs, Textarea } from '@/components/ui'
+import { Bento, Badge, Button, DateField, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Tabs, Textarea } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   addStockEntry,
@@ -15,6 +15,7 @@ import type { CompanySettings, Conversion, Material, StockEntry, WeightUnit } fr
 import { allWeightUnits, canWrite, stockLevel } from '@/types'
 import { stockDualUnits } from '@/components/FormulaBuilder'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/utils'
+import { localDayEnd, localDayStart } from '@/lib/dateInput'
 import { FuelPanel } from '@/pages/FuelPanel'
 
 type WarehouseTab = 'kho' | 'dau' | 'tong-ket' | 'lich-su'
@@ -110,11 +111,11 @@ export function WarehousePage() {
     if (historyFilter === 'import') list = list.filter((e) => e.type !== 'export')
     if (historyFilter === 'export') list = list.filter((e) => e.type === 'export')
     if (dateFrom) {
-      const from = new Date(dateFrom).setHours(0, 0, 0, 0)
+      const from = localDayStart(dateFrom)
       list = list.filter((e) => e.createdAt >= from)
     }
     if (dateTo) {
-      const to = new Date(dateTo).setHours(23, 59, 59, 999)
+      const to = localDayEnd(dateTo)
       list = list.filter((e) => e.createdAt <= to)
     }
     return list
@@ -311,8 +312,8 @@ export function WarehousePage() {
                 <option value="import">Chỉ nhập</option>
                 <option value="export">Chỉ xuất</option>
               </Select>
-              <Input label="Từ ngày" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-              <Input label="Đến ngày" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <DateField label="Từ ngày" value={dateFrom} onChange={setDateFrom} allowEmpty />
+              <DateField label="Đến ngày" value={dateTo} onChange={setDateTo} allowEmpty />
             </div>
           </Bento>
 

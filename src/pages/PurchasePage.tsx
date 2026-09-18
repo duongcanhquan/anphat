@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
-import { Badge, Bento, Button, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Tabs, Textarea } from '@/components/ui'
+import { Badge, Bento, Button, DateField, Empty, Input, Modal, PageHeader, SearchableSelect, Select, Tabs, Textarea } from '@/components/ui'
 import { MoneyInput } from '@/components/MoneyInput'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -686,7 +686,7 @@ export function PurchasePage() {
             searchPlaceholder="Tìm vật liệu…"
             required
           />
-          <Input label="Ngày đơn" type="date" value={orderAt} onChange={(e) => setOrderAt(e.target.value)} required />
+          <DateField label="Ngày đơn" value={orderAt} onChange={setOrderAt} required />
 
           <div>
             <p className="mb-1.5 text-sm font-medium text-ink-soft">Cách tính đơn mua</p>
@@ -838,7 +838,7 @@ export function PurchasePage() {
               />
             </>
           )}
-          <Input label="Ngày nhập" type="date" value={rAt} onChange={(e) => setRAt(e.target.value)} required />
+          <DateField label="Ngày nhập" value={rAt} onChange={setRAt} required />
           <div className="grid grid-cols-2 gap-2">
             <Input label="Số lượng" type="number" step="any" value={rQty} onChange={(e) => setRQty(e.target.value)} required />
             <MoneyInput label="Đơn giá" value={rUnitPrice} onChange={setRUnitPrice} />

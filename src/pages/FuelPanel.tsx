@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Camera, Keyboard } from 'lucide-react'
-import { Button, Empty, Input, SearchableSelect, Select, StatBig, Textarea } from '@/components/ui'
+import { Button, DateField, Empty, Input, SearchableSelect, Select, StatBig, Textarea } from '@/components/ui'
 import { MoneyInput } from '@/components/MoneyInput'
 import { useAuth } from '@/contexts/AuthContext'
 import { createFuelReading, generateFuelCode, watchFuelReadings, watchMaterials, watchStockEntries } from '@/lib/store'
@@ -18,6 +18,7 @@ import {
   toDateInputValue,
   type PeriodType,
 } from '@/lib/utils'
+import { localDayEnd, localDayStart } from '@/lib/dateInput'
 
 async function ocrImage(blob: Blob): Promise<string> {
   const { createWorker } = await import('tesseract.js')
@@ -78,8 +79,8 @@ export function FuelPanel() {
 
   const mat = materials.find((m) => m.id === materialId)
   const range = useMemo(() => {
-    const start = from ? new Date(from).setHours(0, 0, 0, 0) : 0
-    const end = to ? new Date(to).setHours(23, 59, 59, 999) : Number.MAX_SAFE_INTEGER
+    const start = from ? localDayStart(from) : 0
+    const end = to ? localDayEnd(to) : Number.MAX_SAFE_INTEGER
     return { start, end }
   }, [from, to])
 
@@ -270,7 +271,7 @@ export function FuelPanel() {
             <Input label="Số (lít) — xác nhận" type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)} required />
             <MoneyInput label="Đơn giá (nếu đọc được)" value={unitPrice} onChange={setUnitPrice} />
           </div>
-          <Input label="Thời điểm đổ" type="date" value={pumpedAt} onChange={(e) => setPumpedAt(e.target.value)} />
+          <DateField label="Thời điểm đổ" value={pumpedAt} onChange={setPumpedAt} required />
           <Textarea label="Ghi chú" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Xe, ca, cây xăng nội bộ…" />
           <Button type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Xác nhận trừ kho'}</Button>
         </form>
@@ -309,8 +310,8 @@ export function FuelPanel() {
             <option value="createdAt">Ngày hệ thống ghi</option>
             <option value="pumpedAt">Thời điểm đổ</option>
           </Select>
-          <Input label="Từ ngày" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <Input label="Đến ngày" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DateField label="Từ ngày" value={from} onChange={setFrom} allowEmpty />
+          <DateField label="Đến ngày" value={to} onChange={setTo} allowEmpty />
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">

@@ -176,6 +176,7 @@ export function Select({
 }
 
 export { SearchableSelect, type SearchableOption } from '@/components/SearchableSelect'
+export { DateField, DateTimeField } from '@/components/DateField'
 
 export function Badge({
   children,

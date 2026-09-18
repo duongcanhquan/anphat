@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test --experimental-strip-types src/lib/purchase.test.ts src/lib/production.test.ts src/lib/ledger.test.ts src/lib/salesDelivery.test.ts src/lib/customerDebt.test.ts src/lib/pumpOcr.test.ts",
+    "test": "node --test --experimental-strip-types src/lib/purchase.test.ts src/lib/production.test.ts src/lib/ledger.test.ts src/lib/salesDelivery.test.ts src/lib/customerDebt.test.ts src/lib/pumpOcr.test.ts src/lib/dateInput.test.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

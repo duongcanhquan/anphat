@@ -14,6 +14,8 @@ import {
   Select,
   Tabs,
   Textarea,
+  DateField,
+  DateTimeField,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -1072,12 +1074,12 @@ export function SalesPage() {
                 disabled={!writable}
                 placeholder="Tên khách hàng"
               />
-              <Input
+              <DateField
                 className="mt-2"
                 label="Ngày đơn"
-                type="date"
                 value={orderAtDate}
-                onChange={(e) => setOrderAtDate(e.target.value)}
+                onChange={setOrderAtDate}
+                required
                 disabled={!writable || !!editingOrder}
               />
             </Bento>
@@ -1311,11 +1313,10 @@ export function SalesPage() {
                     <div className="space-y-2 border-t border-line pt-3">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted">Nhập cọc / đợt thanh toán</p>
                       <MoneyInput label="Số tiền thanh toán" value={payAmount} onChange={setPayAmount} />
-                      <Input
+                      <DateTimeField
                         label="Thời gian thanh toán"
-                        type="datetime-local"
                         value={payAt}
-                        onChange={(e) => setPayAt(e.target.value)}
+                        onChange={setPayAt}
                       />
                       <Input label="Ghi chú đợt" value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Cọc, đợt 1…" />
                       <Button variant="secondary" className="w-full" disabled={payAmount <= 0} onClick={addPaymentRow}>
@@ -1615,11 +1616,10 @@ export function SalesPage() {
                 <div className="space-y-2 rounded-xl border border-dashed border-line bg-white p-3">
                   <p className="text-sm font-semibold">Thêm đợt thanh toán</p>
                   <MoneyInput label="Số tiền" value={detailPayAmount} onChange={setDetailPayAmount} />
-                  <Input
+                  <DateTimeField
                     label="Thời gian thanh toán"
-                    type="datetime-local"
                     value={detailPayAt}
-                    onChange={(e) => setDetailPayAt(e.target.value)}
+                    onChange={setDetailPayAt}
                   />
                   <Input label="Ghi chú" value={detailPayNote} onChange={(e) => setDetailPayNote(e.target.value)} placeholder="Cọc, đợt 2…" />
                   <Button className="w-full" disabled={detailPayBusy || detailPayAmount <= 0} onClick={addDetailPayment}>
